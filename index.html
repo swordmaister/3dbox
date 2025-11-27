@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>3D Physics Playground - Full Features</title>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; touch-action: none; font-family: sans-serif; }
+        canvas { display: block; width: 100%; height: 100%; }
+
+        /* UIオーバーレイ */
+        #ui-container {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 10;
+        }
+
+        /* 落下ボタン (右下) */
+        #spawn-btn {
+            position: absolute; right: 20px; bottom: 80px;
+            width: 80px; height: 80px;
+            background: #2196F3; color: white; border-radius: 50%;
+            border: 3px solid white; font-weight: bold; font-size: 14px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            pointer-events: auto; cursor: pointer;
+            display: flex; justify-content: center; align-items: center;
+            user-select: none; z-index: 20;
+        }
+        #spawn-btn:active { transform: scale(0.9); background: #1976D2; }
+
+        /* ジャンプボタン (左下・ジョイスティックの右側) */
+        #jump-btn {
+            position: absolute; left: 160px; bottom: 100px;
+            width: 80px; height: 40px;
+            background: #ff9800; color: white; border-radius: 8px;
+            border: 3px solid white; font-weight: bold; font-size: 14px;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
+            pointer-events: auto; cursor: pointer;
+            display: flex; justify-content: center; align-items: center;
+            user-select: none; z-index: 20;
+        }
+        #jump-btn:active { transform: scale(0.9); background: #e68900; }
+
+        /* 移動スティック (左下) */
+        #joystick-zone {
+            position: absolute; left: 20px; bottom: 40px;
+            width: 120px; height: 120px;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            border-radius: 50%;
+            pointer-events: auto; z-index: 20;
+        }
+        #joystick-knob {
+            position: absolute; top: 50%; left: 50%;
+            width: 40px; height: 40px;
+            background: rgba(255, 255, 255, 0.8);
+            border-radius: 50%;
+            transform: translate(-50%, -50%);
+            pointer-events: none;
+        }
+
+        /* 視点操作エリア (画面右半分) */
+        #look-zone {
+            position: absolute; top: 0; right: 0; bottom: 0; left: 40%;
+            pointer-events: auto; z-index: 9;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-container">
+        <div id="look-zone"></div>
+        <div id="joystick-zone"><div id="joystick-knob"></div></div>
+        <div id="jump-btn">JUMP</div>
+        <div id="spawn-btn">DROP</div>
+    </div>
+
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://unpkg.com/three@0.150.0/build/three.module.js",
+                "three/addons/": "https://unpkg.com/three@0.150.0/examples/jsm/",
+                "cannon-es": "https://unpkg.com/cannon-es@0.20.0/dist/cannon-es.js"
+            }
+        }
+    </script>
+
+    <script type="module">
+        import * as THREE from 'three';
+        import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import * as CANNON from 'cannon-es';
+
+        // --- 設定 ---
+        const timeStep = 1 / 60;
+        const objects = [];
+        const input = { x: 0, y: 0 };
+        const cameraAngle = { pitch: 0, yaw: 0 };
+        const maxObjects = 200; // ★ 制限を200個に増量
+
+        // --- 1. 物理エンジン (Cannon-es) ---
+        const world = new CANNON.World();
+        world.gravity.set(0, -9.82, 0);
+        
+        const physicsMat = new CANNON.Material();
+        const contactMat = new CANNON.ContactMaterial(physicsMat, physicsMat, {
+            friction: 0.3,
+            restitution: 0.6
+        });
+        world.addContactMaterial(contactMat);
+
+        // 地面
+        const groundBody = new CANNON.Body({
+            mass: 0,
+            shape: new CANNON.Plane(),
+            material: physicsMat
+        });
+        groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
+        world.addBody(groundBody);
+        
+        // プレイヤー (球体)
+        const playerHeight = 1.6;
+        const playerRadius = 0.5;
+        const playerBody = new CANNON.Body({ mass: 60, shape: new CANNON.Sphere(playerRadius), material: physicsMat });
+        playerBody.position.set(0, playerHeight, 0);
+        playerBody.linearDamping = 0.9;
+        playerBody.fixedRotation = true;
+        world.addBody(playerBody);
+
+        let canJump = true; // ジャンプ判定フラグ
+        const jumpImpulse = 350; // ジャンプの強さ
+
+        // --- 2. グラフィックス (Three.js) ---
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x88ccee);
+
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
+        const dolly = new THREE.Group();
+        scene.add(dolly);
+        dolly.add(camera);
+        dolly.position.set(0, playerHeight, 0);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.xr.enabled = true;
+        document.body.appendChild(renderer.domElement);
+        document.body.appendChild(VRButton.createButton(renderer));
+
+        const ambLight = new THREE.AmbientLight(0xffffff, 0.5);
+        scene.add(ambLight);
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1);
+        dirLight.position.set(5, 10, 5);
+        dirLight.castShadow = true;
+        scene.add(dirLight);
+
+        // 地面の見た目
+        const groundMesh = new THREE.Mesh(
+            new THREE.PlaneGeometry(50, 50),
+            new THREE.MeshStandardMaterial({ color: 0x444444 })
+        );
+        groundMesh.rotation.x = -Math.PI / 2;
+        groundMesh.receiveShadow = true;
+        scene.add(groundMesh);
+
+        // --- 3. 壁の生成 ★ NEW ---
+        const halfExtent = 25; // 地面の半分のサイズ
+        const wallHeight = 5; // 壁の半分の高さ
+        const wallThickness = 0.2;
+
+        const wallMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
+        const wallGeoX = new THREE.BoxGeometry(wallThickness, wallHeight * 2, halfExtent * 2);
+        const wallGeoZ = new THREE.BoxGeometry(halfExtent * 2, wallHeight * 2, wallThickness);
+        const wallShapeX = new CANNON.Box(new CANNON.Vec3(wallThickness / 2, wallHeight, halfExtent));
+        const wallShapeZ = new CANNON.Box(new CANNON.Vec3(halfExtent, wallHeight, wallThickness / 2));
+        
+        const walls = [
+            // Z軸方向の壁 (X方向の位置)
+            { x: halfExtent, z: 0, meshGeo: wallGeoX, bodyShape: wallShapeX },
+            { x: -halfExtent, z: 0, meshGeo: wallGeoX, bodyShape: wallShapeX },
+            // X軸方向の壁 (Z方向の位置)
+            { x: 0, z: halfExtent, meshGeo: wallGeoZ, bodyShape: wallShapeZ },
+            { x: 0, z: -halfExtent, meshGeo: wallGeoZ, bodyShape: wallShapeZ },
+        ];
+
+        walls.forEach(w => {
+            // Three.js メッシュ
+            const mesh = new THREE.Mesh(w.meshGeo, wallMat);
+            mesh.position.set(w.x, wallHeight, w.z);
+            mesh.castShadow = true;
+            mesh.receiveShadow = true;
+            scene.add(mesh);
+            
+            // Cannon-es 剛体
+            const body = new CANNON.Body({ mass: 0, shape: w.bodyShape, material: physicsMat });
+            body.position.set(w.x, wallHeight, w.z);
+            world.addBody(body);
+        });
+
+        // --- 4. ロジック ---
+
+        function spawnObject() {
+            const direction = new THREE.Vector3();
+            camera.getWorldDirection(direction);
+            
+            const spawnPos = new THREE.Vector3()
+                .copy(dolly.position)
+                .add(new THREE.Vector3(0, 5, 0))
+                .add(direction.multiplyScalar(2)); 
+
+            // ★ サイズのばらつきを拡大
+            const size = Math.random() * 1.8 + 0.2; // 0.2 から 2.0 まで
+            const r = Math.random();
+            let geo, shape;
+
+            if (r < 0.33) { // 箱
+                geo = new THREE.BoxGeometry(size, size, size);
+                shape = new CANNON.Box(new CANNON.Vec3(size/2, size/2, size/2));
+            } else if (r < 0.66) { // 球
+                geo = new THREE.SphereGeometry(size/2);
+                shape = new CANNON.Sphere(size/2);
+            } else { // 筒
+                geo = new THREE.CylinderGeometry(size/2, size/2, size);
+                shape = new CANNON.Cylinder(size/2, size/2, size);
+            }
+
+            const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff }));
+            mesh.position.copy(spawnPos);
+            mesh.castShadow = true;
+            scene.add(mesh);
+
+            const body = new CANNON.Body({ mass: size * 5, shape: shape, material: physicsMat }); // 質量もサイズに依存
+            body.position.copy(spawnPos);
+            const randAxis = new CANNON.Vec3(Math.random(), Math.random(), Math.random()).unit();
+            body.quaternion.setFromAxisAngle(randAxis, Math.random() * Math.PI);
+            world.addBody(body);
+
+            objects.push({ mesh, body });
+
+            // ★ 個数制限
+            if (objects.length > maxObjects) {
+                const old = objects.shift();
+                scene.remove(old.mesh);
+                world.removeBody(old.body);
+            }
+        }
+
+        // --- 5. 操作イベント ---
+        const joystickZone = document.getElementById('joystick-zone');
+        const joystickKnob = document.getElementById('joystick-knob');
+        const lookZone = document.getElementById('look-zone');
+        const spawnBtn = document.getElementById('spawn-btn');
+        const jumpBtn = document.getElementById('jump-btn'); // ★ JUMPボタンの要素
+
+        // DROPボタン
+        spawnBtn.addEventListener('touchstart', (e) => { e.preventDefault(); spawnObject(); }, { passive: false });
+        spawnBtn.addEventListener('click', (e) => { spawnObject(); });
+
+        // ★ JUMPボタン
+        jumpBtn.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            if (canJump) {
+                // 上向きに衝撃（Impulse）を与える
+                const jumpVector = new CANNON.Vec3(0, jumpImpulse, 0);
+                playerBody.applyImpulse(jumpVector, playerBody.position);
+                canJump = false; // ジャンプフラグをOFF
+            }
+        }, { passive: false });
+
+
+        // ジョイスティック (移動)
+        let joyId = null;
+        let joyCenter = { x: 0, y: 0 };
+
+        joystickZone.addEventListener('touchstart', (e) => {
+            e.preventDefault();
+            const t = e.changedTouches[0];
+            joyId = t.identifier;
+            const rect = joystickZone.getBoundingClientRect();
+            joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
+            moveJoy(t.clientX, t.clientY);
+        }, { passive: false });
+
+        joystickZone.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            for (let i = 0; i < e.changedTouches.length; i++) {
+                if (e.changedTouches[i].identifier === joyId) moveJoy(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
+            }
+        }, { passive: false });
+
+        joystickZone.addEventListener('touchend', (e) => {
+            e.preventDefault();
+            input.x = 0; input.y = 0;
+            joystickKnob.style.transform = `translate(-50%, -50%)`;
+        }, { passive: false });
+
+        function moveJoy(x, y) {
+            const maxR = 40;
+            let dx = x - joyCenter.x;
+            let dy = y - joyCenter.y;
+            const dist = Math.sqrt(dx*dx + dy*dy);
+            if(dist > maxR) { dx = (dx/dist)*maxR; dy = (dy/dist)*maxR; }
+            
+            joystickKnob.style.transform = `translate(-50%, -50%) translate(${dx}px, ${dy}px)`;
+            input.x = dx / maxR;
+            input.y = dy / maxR;
+        }
+
+        // 視点操作 (Look Zone)
+        let lastX, lastY;
+        lookZone.addEventListener('touchstart', (e) => {
+            lastX = e.touches[0].clientX;
+            lastY = e.touches[0].clientY;
+        }, { passive: false });
+
+        lookZone.addEventListener('touchmove', (e) => {
+            e.preventDefault();
+            const x = e.touches[0].clientX;
+            const y = e.touches[0].clientY;
+            
+            if (lastX != null) {
+                cameraAngle.yaw -= (x - lastX) * 0.005;
+                cameraAngle.pitch -= (y - lastY) * 0.005;
+                cameraAngle.pitch = Math.max(-1.5, Math.min(1.5, cameraAngle.pitch));
+            }
+            lastX = x; lastY = y;
+        }, { passive: false });
+
+        lookZone.addEventListener('touchend', () => { lastX = null; lastY = null; });
+
+
+        // --- 6. メインループ ---
+        const clock = new THREE.Clock();
+        const moveSpeed = 5.0;
+
+        renderer.setAnimationLoop(() => {
+            const dt = Math.min(clock.getDelta(), 0.1);
+            
+            world.step(timeStep, dt, 3);
+
+            // ★ ジャンプ判定 (Y座標が地面に近いかチェック)
+            if (playerBody.position.y <= playerRadius + 0.1) {
+                canJump = true;
+            }
+
+            if (!renderer.xr.isPresenting) {
+                // スマホ/PCモード: 移動計算
+                
+                const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngle.yaw);
+                const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngle.yaw);
+                
+                const moveVec = new THREE.Vector3()
+                    .addScaledVector(right, input.x)
+                    .addScaledVector(forward, -input.y)
+                    .normalize().multiplyScalar(moveSpeed);
+                
+                // 物理ボディの速度を直接操作
+                playerBody.velocity.x = moveVec.x;
+                playerBody.velocity.z = moveVec.z;
+
+                dolly.position.copy(playerBody.position);
+                dolly.position.y += playerHeight - playerRadius; // 目の高さ
+                
+                camera.rotation.set(cameraAngle.pitch, cameraAngle.yaw, 0, 'YXZ');
+            }
+
+            // オブジェクトのメッシュを物理ボディに同期
+            for (const obj of objects) {
+                obj.mesh.position.copy(obj.body.position);
+                obj.mesh.quaternion.copy(obj.body.quaternion);
+            }
+
+            renderer.render(scene, camera);
+        });
+
+        // リサイズ
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+    </script>
+</body>
+</html>
