@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WebXR Physics Sandbox - Grab & Throw</title>
+    <title>WebXR Physics Sandbox - Fixed Height</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; touch-action: none; font-family: sans-serif; }
         canvas { display: block; width: 100%; height: 100%; }
@@ -57,10 +57,14 @@
         const maxObjects = 200;
         let isVR = false;
 
+        // ★ 視点の高さ補正 (メートル)
+        // 物理ボディ(足元)からどれくらい上にカメラを置くか
+        const eyeHeightOffset = 1.3; 
+
         // --- 物理エンジン ---
         const world = new CANNON.World();
         world.gravity.set(0, -9.82, 0);
-        world.solver.iterations = 10; // 拘束のために反復回数を少し増やす
+        world.solver.iterations = 10;
         const physicsMat = new CANNON.Material();
         const contactMat = new CANNON.ContactMaterial(physicsMat, physicsMat, { friction: 0.4, restitution: 0.3 });
         world.addContactMaterial(contactMat);
@@ -69,10 +73,11 @@
         groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
         world.addBody(groundBody);
         
+        // プレイヤーの足元 (球体)
         const playerHeight = 1.7;
         const playerRadius = 0.3;
         const playerBody = new CANNON.Body({ mass: 80, shape: new CANNON.Sphere(playerRadius), material: physicsMat, fixedRotation: true, linearDamping: 0.95 });
-        playerBody.position.set(0, playerHeight, 0);
+        playerBody.position.set(0, 5, 0); // 最初は上空から
         world.addBody(playerBody);
 
         let canJump = true;
@@ -86,12 +91,15 @@
         const dolly = new THREE.Group();
         scene.add(dolly);
         dolly.add(camera);
+        // 初期位置
         dolly.position.set(0, playerHeight, 0);
 
         const renderer = new THREE.WebGLRenderer({ antialias: true });
         renderer.setSize(window.innerWidth, window.innerHeight);
         renderer.shadowMap.enabled = true;
         renderer.xr.enabled = true;
+        // ローカルフロア (床基準) を設定
+        renderer.xr.setReferenceSpaceType('local-floor');
         document.body.appendChild(renderer.domElement);
         document.body.appendChild(VRButton.createButton(renderer));
 
@@ -110,7 +118,7 @@
 
         // 壁の生成
         const wallMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
-        const wallPhysMat = new CANNON.Material({friction: 0.1, restitution: 0}); // 壁は滑りやすく跳ねない
+        const wallPhysMat = new CANNON.Material({friction: 0.1, restitution: 0});
         const halfExtent = 25; const wallHeight = 5; const wallThickness = 1.0;
         const createWall = (x, z, w, d) => {
             const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, wallHeight*2, d), wallMat);
@@ -126,9 +134,9 @@
         createWall(0, halfExtent, halfExtent*2, wallThickness);
         createWall(0, -halfExtent, halfExtent*2, wallThickness);
 
-        // --- VRコントローラーとインタラクション ---
-        const controller1 = renderer.xr.getController(0); // 左手想定
-        const controller2 = renderer.xr.getController(1); // 右手想定
+        // --- VRコントローラー ---
+        const controller1 = renderer.xr.getController(0);
+        const controller2 = renderer.xr.getController(1);
         dolly.add(controller1);
         dolly.add(controller2);
 
@@ -140,82 +148,46 @@
         controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
         dolly.add(controllerGrip2);
 
-        // 掴む機能のための変数
+        // 掴む機能
         let grabbedObject = null;
         let grabConstraint = null;
-        const grabDistance = 0.5; // 掴める距離
+        const grabDistance = 1.0; // 少し遠くても吸い寄せる
         
-        // コントローラー追従用のキネマティックボディ（物理演算空間でのコントローラーの手）
         const handBody = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC });
-        handBody.collisionFilterGroup = 0; // 他の物体と衝突しないようにする
+        handBody.collisionFilterGroup = 0;
         handBody.collisionFilterMask = 0;
         world.addBody(handBody);
 
-        // 投げるための速度計算用
         const controllerPosPrev = new THREE.Vector3();
         const controllerPosCurr = new THREE.Vector3();
         const controllerVelocity = new THREE.Vector3();
 
-        // 右トリガーイベント (掴む/離す)
         controller2.addEventListener('selectstart', onGrabStart);
         controller2.addEventListener('selectend', onGrabEnd);
 
         function onGrabStart() {
-            if (grabbedObject) return; // 既に掴んでいたら何もしない
-
-            // コントローラーの位置を取得
+            if (grabbedObject) return;
             const controllerPos = controller2.getWorldPosition(new THREE.Vector3());
-            
-            // 近くにあるオブジェクトを探す
             let closestDist = grabDistance;
             let targetBody = null;
-
             for (const obj of objects) {
                 const dist = controllerPos.distanceTo(obj.mesh.position);
-                if (dist < closestDist) {
-                    closestDist = dist;
-                    targetBody = obj.body;
-                }
+                if (dist < closestDist) { closestDist = dist; targetBody = obj.body; }
             }
-
             if (targetBody) {
                 grabbedObject = targetBody;
-                
-                // 手のボディをコントローラーの位置に移動
                 handBody.position.copy(controllerPos);
-                
-                // 拘束を作成 (手とオブジェクトを繋ぐ)
-                // PointToPointConstraintで、オブジェクトの重心を手で持つ
-                grabConstraint = new CANNON.PointToPointConstraint(
-                    handBody, 
-                    new CANNON.Vec3(0, 0, 0), // 手のローカル座標（中心）
-                    grabbedObject, 
-                    new CANNON.Vec3(0, 0, 0)  // オブジェクトのローカル座標（中心）
-                );
+                grabConstraint = new CANNON.PointToPointConstraint(handBody, new CANNON.Vec3(0, 0, 0), grabbedObject, new CANNON.Vec3(0, 0, 0));
                 world.addConstraint(grabConstraint);
-                
-                // 掴んでいる間は少し軽くして持ち上げやすくする（任意）
-                // grabbedObject.mass *= 0.5; 
-                // grabbedObject.updateMassProperties();
             }
         }
 
         function onGrabEnd() {
             if (grabbedObject && grabConstraint) {
-                // 拘束を解除
                 world.removeConstraint(grabConstraint);
                 grabConstraint = null;
-                
-                // 質量を戻す（変更していた場合）
-                // grabbedObject.mass *= 2.0;
-                // grabbedObject.updateMassProperties();
-
-                // 投げる速度を適用
-                // Cannonの速度ベクトルにThreeの計算結果をコピー
-                grabbedObject.velocity.set(controllerVelocity.x, controllerVelocity.y, controllerVelocity.z);
-                // 少し回転も加える（それっぽく見せるため）
+                grabbedObject.velocity.set(controllerVelocity.x * 1.5, controllerVelocity.y * 1.5, controllerVelocity.z * 1.5); // 投げる力を増強
                 grabbedObject.angularVelocity.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).scale(5);
-
                 grabbedObject = null;
             }
         }
@@ -224,7 +196,7 @@
         function spawnObject(position, direction) {
             if (!position) {
                 direction = new THREE.Vector3(); camera.getWorldDirection(direction);
-                position = new THREE.Vector3().copy(dolly.position).add(new THREE.Vector3(0, 3, 0)).add(direction.clone().multiplyScalar(1));
+                position = new THREE.Vector3().copy(dolly.position).add(new THREE.Vector3(0, 2, 0)).add(direction.clone().multiplyScalar(1));
             }
             const spawnPos = position.clone();
             if(direction) spawnPos.add(direction.multiplyScalar(0.5));
@@ -297,23 +269,19 @@
         renderer.setAnimationLoop(() => {
             const dt = Math.min(clock.getDelta(), 0.1);
             
-            // 掴んでいる場合、手の物理ボディをコントローラーの位置に更新
             if (isVR) {
                 controller2.getWorldPosition(controllerPosCurr);
-                if (grabConstraint) {
-                    handBody.position.copy(controllerPosCurr);
-                }
-                // 投げるための速度計算 (差分 / 経過時間)
+                if (grabConstraint) { handBody.position.copy(controllerPosCurr); }
                 controllerVelocity.subVectors(controllerPosCurr, controllerPosPrev).divideScalar(dt);
                 controllerPosPrev.copy(controllerPosCurr);
             }
             
-            world.step(timeStep, dt, 5); // 物理ステップ
+            world.step(timeStep, dt, 5);
 
             if (playerBody.position.y <= playerRadius + 0.15) canJump = true;
 
             if (isVR) {
-                // --- VRモード移動 & ジャンプ ---
+                // VRモード
                 let vrMoveX = 0, vrMoveZ = 0;
                 let jumpButtonPressed = false;
                 const session = renderer.xr.getSession();
@@ -325,38 +293,28 @@
                             if (axes.length >= 4) { vrMoveX = axes[2]; vrMoveZ = axes[3]; }
                         }
                         if (source.handedness === 'right') {
-                            // Aボタン (通常 buttons[4]) またはスティック押し込み(buttons[3]) でジャンプ
                             const btns = source.gamepad.buttons;
-                            if ((btns[4] && btns[4].pressed) || (btns[3] && btns[3].pressed)) {
-                                jumpButtonPressed = true;
-                            }
+                            if ((btns[4] && btns[4].pressed) || (btns[3] && btns[3].pressed)) { jumpButtonPressed = true; }
                         }
                     }
                 }
 
-                // ジャンプ実行 (ボタンが押された瞬間のみ)
-                if (jumpButtonPressed && !jumpButtonPressedPrev) {
-                    doJump();
-                }
+                if (jumpButtonPressed && !jumpButtonPressedPrev) doJump();
                 jumpButtonPressedPrev = jumpButtonPressed;
 
-                // 移動実行
                 const headRotation = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
                 if (Math.abs(vrMoveX) > 0.1 || Math.abs(vrMoveZ) > 0.1) {
                     const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), headRotation.y);
                     const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), headRotation.y);
                     const moveVec = new THREE.Vector3().addScaledVector(right, vrMoveX).addScaledVector(forward, vrMoveZ).normalize().multiplyScalar(moveSpeed);
-                    // 速度を直接設定せず、力を加えて制御する方が自然だが、簡易的に速度制限付きで適用
                     playerBody.velocity.x = moveVec.x * 0.8 + playerBody.velocity.x * 0.2;
                     playerBody.velocity.z = moveVec.z * 0.8 + playerBody.velocity.z * 0.2;
                 } else {
-                    // 入力がないときは減速
-                    playerBody.velocity.x *= 0.9;
-                    playerBody.velocity.z *= 0.9;
+                    playerBody.velocity.x *= 0.9; playerBody.velocity.z *= 0.9;
                 }
 
             } else {
-                // --- スマホモード移動 ---
+                // Mobileモード
                 const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngle.yaw);
                 const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngle.yaw);
                 const moveVec = new THREE.Vector3().addScaledVector(right, input.x).addScaledVector(forward, -input.y).normalize().multiplyScalar(moveSpeed);
@@ -364,8 +322,10 @@
                 camera.rotation.set(cameraAngle.pitch, cameraAngle.yaw, 0, 'YXZ');
             }
             
+            // ★ カメラ位置の更新 (高さ補正を追加) ★
             dolly.position.copy(playerBody.position);
-            dolly.position.y -= playerRadius; // 物理ボディ中心から足元へ補正
+            dolly.position.y -= playerRadius; // 足元基準にする
+            dolly.position.y += eyeHeightOffset; // ここで高さを盛る (1.3mアップ)
 
             for (const obj of objects) {
                 obj.mesh.position.copy(obj.body.position);
