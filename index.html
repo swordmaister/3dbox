@@ -3,67 +3,20 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>3D Physics Playground - Full Hybrid VR/Mobile</title>
+    <title>WebXR Physics Sandbox - Grab & Throw</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; touch-action: none; font-family: sans-serif; }
         canvas { display: block; width: 100%; height: 100%; }
-
-        /* UIオーバーレイ */
-        #ui-container {
-            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
-            pointer-events: none; z-index: 10;
-        }
-
-        /* UI部品 */
-        .ui-element {
-            pointer-events: auto; z-index: 20; user-select: none;
-            display: flex; justify-content: center; align-items: center;
-            box-shadow: 0 4px 10px rgba(0,0,0,0.5);
-            border: 3px solid white;
-        }
-
-        /* 落下ボタン (右下) */
-        #spawn-btn {
-            position: absolute; right: 20px; bottom: 80px;
-            width: 80px; height: 80px;
-            background: #2196F3; color: white; border-radius: 50%;
-            font-weight: bold; font-size: 14px;
-        }
+        #ui-container { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 10; }
+        .ui-element { pointer-events: auto; z-index: 20; user-select: none; display: flex; justify-content: center; align-items: center; box-shadow: 0 4px 10px rgba(0,0,0,0.5); border: 3px solid white; }
+        #spawn-btn { position: absolute; right: 20px; bottom: 80px; width: 80px; height: 80px; background: #2196F3; color: white; border-radius: 50%; font-weight: bold; font-size: 14px; }
         #spawn-btn:active { transform: scale(0.9); background: #1976D2; }
-
-        /* ジャンプボタン (左下・ジョイスティックの右側) */
-        #jump-btn {
-            position: absolute; left: 160px; bottom: 100px;
-            width: 80px; height: 40px;
-            background: #ff9800; color: white; border-radius: 8px;
-            font-weight: bold; font-size: 14px;
-        }
+        #jump-btn { position: absolute; left: 160px; bottom: 100px; width: 80px; height: 40px; background: #ff9800; color: white; border-radius: 8px; font-weight: bold; font-size: 14px; }
         #jump-btn:active { transform: scale(0.9); background: #e68900; }
-
-        /* 移動スティック (左下) */
-        #joystick-zone {
-            position: absolute; left: 20px; bottom: 40px;
-            width: 120px; height: 120px;
-            background: rgba(255, 255, 255, 0.1);
-            border: 2px solid rgba(255, 255, 255, 0.3);
-            border-radius: 50%;
-        }
-        #joystick-knob {
-            position: absolute; top: 50%; left: 50%;
-            width: 40px; height: 40px;
-            background: rgba(255, 255, 255, 0.8);
-            border-radius: 50%;
-            transform: translate(-50%, -50%);
-            pointer-events: none;
-            border: none;
-            box-shadow: none;
-        }
-
-        /* 視点操作エリア (画面右半分) */
-        #look-zone {
-            position: absolute; top: 0; right: 0; bottom: 0; left: 40%;
-            pointer-events: auto; z-index: 9;
-        }
+        #joystick-zone { position: absolute; left: 20px; bottom: 40px; width: 120px; height: 120px; background: rgba(255, 255, 255, 0.1); border: 2px solid rgba(255, 255, 255, 0.3); border-radius: 50%; }
+        #joystick-knob { position: absolute; top: 50%; left: 50%; width: 40px; height: 40px; background: rgba(255, 255, 255, 0.8); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; border: none; box-shadow: none; }
+        #look-zone { position: absolute; top: 0; right: 0; bottom: 0; left: 40%; pointer-events: auto; z-index: 9; }
+        #vr-instructions { position: absolute; top: 20%; width: 100%; text-align: center; color: white; font-size: 1.2em; text-shadow: 1px 1px 2px black; pointer-events: none; display: none; }
     </style>
 </head>
 <body>
@@ -73,6 +26,11 @@
         <div id="joystick-zone" class="ui-element"><div id="joystick-knob"></div></div>
         <div id="jump-btn" class="ui-element">JUMP</div>
         <div id="spawn-btn" class="ui-element">DROP</div>
+        <div id="vr-instructions">
+            <p>左スティック: 移動</p>
+            <p>右Aボタン: ジャンプ</p>
+            <p>右トリガー: 掴む / 投げる</p>
+        </div>
     </div>
 
     <script type="importmap">
@@ -88,6 +46,7 @@
     <script type="module">
         import * as THREE from 'three';
         import { VRButton } from 'three/addons/webxr/VRButton.js';
+        import { XRControllerModelFactory } from 'three/addons/webxr/XRControllerModelFactory.js';
         import * as CANNON from 'cannon-es';
 
         // --- 設定 ---
@@ -95,38 +54,36 @@
         const objects = [];
         const input = { x: 0, y: 0 };
         const cameraAngle = { pitch: 0, yaw: 0 };
-        const maxObjects = 200; 
+        const maxObjects = 200;
+        let isVR = false;
 
         // --- 物理エンジン ---
         const world = new CANNON.World();
         world.gravity.set(0, -9.82, 0);
+        world.solver.iterations = 10; // 拘束のために反復回数を少し増やす
         const physicsMat = new CANNON.Material();
-        const contactMat = new CANNON.ContactMaterial(physicsMat, physicsMat, { friction: 0.3, restitution: 0.6 });
+        const contactMat = new CANNON.ContactMaterial(physicsMat, physicsMat, { friction: 0.4, restitution: 0.3 });
         world.addContactMaterial(contactMat);
 
-        // 地面 & プレイヤー
         const groundBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane(), material: physicsMat });
         groundBody.quaternion.setFromEuler(-Math.PI / 2, 0, 0);
         world.addBody(groundBody);
         
-        const playerHeight = 1.6;
-        const playerRadius = 0.5;
-        const playerBody = new CANNON.Body({ mass: 60, shape: new CANNON.Sphere(playerRadius), material: physicsMat });
+        const playerHeight = 1.7;
+        const playerRadius = 0.3;
+        const playerBody = new CANNON.Body({ mass: 80, shape: new CANNON.Sphere(playerRadius), material: physicsMat, fixedRotation: true, linearDamping: 0.95 });
         playerBody.position.set(0, playerHeight, 0);
-        playerBody.linearDamping = 0.9;
-        playerBody.fixedRotation = true;
         world.addBody(playerBody);
 
         let canJump = true;
-        const jumpImpulse = 350;
-        const moveSpeed = 5.0;
+        const jumpImpulse = 400;
+        const moveSpeed = 6.0;
 
         // --- グラフィックス ---
         const scene = new THREE.Scene();
         scene.background = new THREE.Color(0x88ccee);
-
         const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 100);
-        const dolly = new THREE.Group(); // カメラコンテナ
+        const dolly = new THREE.Group();
         scene.add(dolly);
         dolly.add(camera);
         dolly.position.set(0, playerHeight, 0);
@@ -138,263 +95,285 @@
         document.body.appendChild(renderer.domElement);
         document.body.appendChild(VRButton.createButton(renderer));
 
-        // 照明と地面
         const ambLight = new THREE.AmbientLight(0xffffff, 0.5);
         scene.add(ambLight);
         const dirLight = new THREE.DirectionalLight(0xffffff, 1);
-        dirLight.position.set(5, 10, 5);
+        dirLight.position.set(10, 20, 10);
         dirLight.castShadow = true;
+        dirLight.shadow.camera.top = 30; dirLight.shadow.camera.bottom = -30; dirLight.shadow.camera.left = -30; dirLight.shadow.camera.right = 30;
         scene.add(dirLight);
 
-        const groundMesh = new THREE.Mesh( new THREE.PlaneGeometry(50, 50), new THREE.MeshStandardMaterial({ color: 0x444444 }) );
+        const groundMesh = new THREE.Mesh( new THREE.PlaneGeometry(100, 100), new THREE.MeshStandardMaterial({ color: 0x444444, roughness: 0.8 }) );
         groundMesh.rotation.x = -Math.PI / 2;
         groundMesh.receiveShadow = true;
         scene.add(groundMesh);
 
-        // 壁の生成 (前回と同じロジック)
-        const halfExtent = 25;
-        const wallHeight = 5;
-        const wallThickness = 0.2;
+        // 壁の生成
         const wallMat = new THREE.MeshStandardMaterial({ color: 0x666666 });
-        const wallGeoX = new THREE.BoxGeometry(wallThickness, wallHeight * 2, halfExtent * 2);
-        const wallGeoZ = new THREE.BoxGeometry(halfExtent * 2, wallHeight * 2, wallThickness);
-        const wallShapeX = new CANNON.Box(new CANNON.Vec3(wallThickness / 2, wallHeight, halfExtent));
-        const wallShapeZ = new CANNON.Box(new CANNON.Vec3(halfExtent, wallHeight, wallThickness / 2));
-        
-        const walls = [
-            { x: halfExtent, z: 0, meshGeo: wallGeoX, bodyShape: wallShapeX },
-            { x: -halfExtent, z: 0, meshGeo: wallGeoX, bodyShape: wallShapeX },
-            { x: 0, z: halfExtent, meshGeo: wallGeoZ, bodyShape: wallShapeZ },
-            { x: 0, z: -halfExtent, meshGeo: wallGeoZ, bodyShape: wallShapeZ },
-        ];
-        walls.forEach(w => {
-            const mesh = new THREE.Mesh(w.meshGeo, wallMat);
-            mesh.position.set(w.x, wallHeight, w.z);
-            mesh.castShadow = true;
-            mesh.receiveShadow = true;
+        const wallPhysMat = new CANNON.Material({friction: 0.1, restitution: 0}); // 壁は滑りやすく跳ねない
+        const halfExtent = 25; const wallHeight = 5; const wallThickness = 1.0;
+        const createWall = (x, z, w, d) => {
+            const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, wallHeight*2, d), wallMat);
+            mesh.position.set(x, wallHeight, z);
+            mesh.castShadow = true; mesh.receiveShadow = true;
             scene.add(mesh);
-            const body = new CANNON.Body({ mass: 0, shape: w.bodyShape, material: physicsMat });
-            body.position.set(w.x, wallHeight, w.z);
+            const body = new CANNON.Body({ mass: 0, shape: new CANNON.Box(new CANNON.Vec3(w/2, wallHeight, d/2)), material: wallPhysMat });
+            body.position.set(x, wallHeight, z);
             world.addBody(body);
-        });
-        
-        // --- 5. VRコントローラーの設定 ★ NEW ---
-        const controller1 = renderer.xr.getController(0);
-        const controller2 = renderer.xr.getController(1);
-        
-        // 落下処理をVRコントローラーに割り当て
-        controller1.addEventListener('selectstart', onVRDrop);
-        controller2.addEventListener('selectstart', onVRDrop);
+        };
+        createWall(halfExtent, 0, wallThickness, halfExtent*2 + wallThickness*2);
+        createWall(-halfExtent, 0, wallThickness, halfExtent*2 + wallThickness*2);
+        createWall(0, halfExtent, halfExtent*2, wallThickness);
+        createWall(0, -halfExtent, halfExtent*2, wallThickness);
+
+        // --- VRコントローラーとインタラクション ---
+        const controller1 = renderer.xr.getController(0); // 左手想定
+        const controller2 = renderer.xr.getController(1); // 右手想定
         dolly.add(controller1);
         dolly.add(controller2);
 
-        // コントローラーの光線表示 (VR内での照準)
-        const controllerLine = new THREE.Line(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(0,0,0), new THREE.Vector3(0,0,-1)]));
-        controllerLine.scale.z = 5;
-        controller1.add(controllerLine.clone());
-        controller2.add(controllerLine.clone());
+        const controllerModelFactory = new XRControllerModelFactory();
+        const controllerGrip1 = renderer.xr.getControllerGrip(0);
+        controllerGrip1.add(controllerModelFactory.createControllerModel(controllerGrip1));
+        dolly.add(controllerGrip1);
+        const controllerGrip2 = renderer.xr.getControllerGrip(1);
+        controllerGrip2.add(controllerModelFactory.createControllerModel(controllerGrip2));
+        dolly.add(controllerGrip2);
+
+        // 掴む機能のための変数
+        let grabbedObject = null;
+        let grabConstraint = null;
+        const grabDistance = 0.5; // 掴める距離
         
-        // VRコントローラーによる落下
-        function onVRDrop() {
-            // コントローラーの向きをカメラの方向として利用
-            const tempMatrix = new THREE.Matrix4();
-            tempMatrix.identity().extractRotation(this.matrixWorld);
-            
-            const direction = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix);
-            const position = new THREE.Vector3().setFromMatrixPosition(this.matrixWorld);
-            
-            spawnObject(position, direction);
-        }
+        // コントローラー追従用のキネマティックボディ（物理演算空間でのコントローラーの手）
+        const handBody = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC });
+        handBody.collisionFilterGroup = 0; // 他の物体と衝突しないようにする
+        handBody.collisionFilterMask = 0;
+        world.addBody(handBody);
 
-        // --- 6. ロジック (VR/Mobile共通化) ---
+        // 投げるための速度計算用
+        const controllerPosPrev = new THREE.Vector3();
+        const controllerPosCurr = new THREE.Vector3();
+        const controllerVelocity = new THREE.Vector3();
 
-        function spawnObject(position, direction) {
-            // モバイルモードで呼ばれた場合、位置と方向を再計算
-            if (!position || !direction) {
-                direction = new THREE.Vector3();
-                camera.getWorldDirection(direction);
-                position = new THREE.Vector3()
-                    .copy(dolly.position)
-                    .add(new THREE.Vector3(0, 5, 0));
+        // 右トリガーイベント (掴む/離す)
+        controller2.addEventListener('selectstart', onGrabStart);
+        controller2.addEventListener('selectend', onGrabEnd);
+
+        function onGrabStart() {
+            if (grabbedObject) return; // 既に掴んでいたら何もしない
+
+            // コントローラーの位置を取得
+            const controllerPos = controller2.getWorldPosition(new THREE.Vector3());
+            
+            // 近くにあるオブジェクトを探す
+            let closestDist = grabDistance;
+            let targetBody = null;
+
+            for (const obj of objects) {
+                const dist = controllerPos.distanceTo(obj.mesh.position);
+                if (dist < closestDist) {
+                    closestDist = dist;
+                    targetBody = obj.body;
+                }
             }
 
-            const spawnPos = position.add(direction.multiplyScalar(2)); 
+            if (targetBody) {
+                grabbedObject = targetBody;
+                
+                // 手のボディをコントローラーの位置に移動
+                handBody.position.copy(controllerPos);
+                
+                // 拘束を作成 (手とオブジェクトを繋ぐ)
+                // PointToPointConstraintで、オブジェクトの重心を手で持つ
+                grabConstraint = new CANNON.PointToPointConstraint(
+                    handBody, 
+                    new CANNON.Vec3(0, 0, 0), // 手のローカル座標（中心）
+                    grabbedObject, 
+                    new CANNON.Vec3(0, 0, 0)  // オブジェクトのローカル座標（中心）
+                );
+                world.addConstraint(grabConstraint);
+                
+                // 掴んでいる間は少し軽くして持ち上げやすくする（任意）
+                // grabbedObject.mass *= 0.5; 
+                // grabbedObject.updateMassProperties();
+            }
+        }
 
-            // ランダム形状とサイズ (前回と同じ)
-            const size = Math.random() * 1.8 + 0.2;
+        function onGrabEnd() {
+            if (grabbedObject && grabConstraint) {
+                // 拘束を解除
+                world.removeConstraint(grabConstraint);
+                grabConstraint = null;
+                
+                // 質量を戻す（変更していた場合）
+                // grabbedObject.mass *= 2.0;
+                // grabbedObject.updateMassProperties();
+
+                // 投げる速度を適用
+                // Cannonの速度ベクトルにThreeの計算結果をコピー
+                grabbedObject.velocity.set(controllerVelocity.x, controllerVelocity.y, controllerVelocity.z);
+                // 少し回転も加える（それっぽく見せるため）
+                grabbedObject.angularVelocity.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).scale(5);
+
+                grabbedObject = null;
+            }
+        }
+
+        // --- ロジック ---
+        function spawnObject(position, direction) {
+            if (!position) {
+                direction = new THREE.Vector3(); camera.getWorldDirection(direction);
+                position = new THREE.Vector3().copy(dolly.position).add(new THREE.Vector3(0, 3, 0)).add(direction.clone().multiplyScalar(1));
+            }
+            const spawnPos = position.clone();
+            if(direction) spawnPos.add(direction.multiplyScalar(0.5));
+
+            const size = Math.random() * 1.5 + 0.3;
             const r = Math.random();
             let geo, shape;
-            if (r < 0.33) { geo = new THREE.BoxGeometry(size, size, size); shape = new CANNON.Box(new CANNON.Vec3(size/2, size/2, size/2)); } 
-            else if (r < 0.66) { geo = new THREE.SphereGeometry(size/2); shape = new CANNON.Sphere(size/2); } 
+            if (r < 0.4) { geo = new THREE.BoxGeometry(size, size, size); shape = new CANNON.Box(new CANNON.Vec3(size/2, size/2, size/2)); } 
+            else if (r < 0.7) { geo = new THREE.SphereGeometry(size/2); shape = new CANNON.Sphere(size/2); } 
             else { geo = new THREE.CylinderGeometry(size/2, size/2, size); shape = new CANNON.Cylinder(size/2, size/2, size); }
 
-            const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff }));
+            const mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: Math.random() * 0xffffff, roughness: 0.7 }));
             mesh.position.copy(spawnPos);
-            mesh.castShadow = true;
-            scene.add(mesh);
+            mesh.castShadow = true; scene.add(mesh);
 
-            const body = new CANNON.Body({ mass: size * 5, shape: shape, material: physicsMat });
+            const body = new CANNON.Body({ mass: size * 10, shape: shape, material: physicsMat });
             body.position.copy(spawnPos);
-            const randAxis = new CANNON.Vec3(Math.random(), Math.random(), Math.random()).unit();
-            body.quaternion.setFromAxisAngle(randAxis, Math.random() * Math.PI);
+            body.quaternion.setFromAxisAngle(new CANNON.Vec3(Math.random(), Math.random(), Math.random()).unit(), Math.random() * Math.PI);
             world.addBody(body);
-
             objects.push({ mesh, body });
-
-            if (objects.length > maxObjects) {
-                const old = objects.shift();
-                scene.remove(old.mesh);
-                world.removeBody(old.body);
-            }
+            if (objects.length > maxObjects) { const old = objects.shift(); scene.remove(old.mesh); world.removeBody(old.body); }
         }
 
-
-        // --- 7. 操作イベント ---
+        // --- 操作イベント (Mobile) ---
         const uiContainer = document.getElementById('ui-container');
+        const vrInstructions = document.getElementById('vr-instructions');
+        const jumpBtn = document.getElementById('jump-btn');
+        const spawnBtn = document.getElementById('spawn-btn');
+        const joystickZone = document.getElementById('joystick-zone');
         const joystickKnob = document.getElementById('joystick-knob');
         const lookZone = document.getElementById('look-zone');
-        const spawnBtn = document.getElementById('spawn-btn');
-        const jumpBtn = document.getElementById('jump-btn');
 
-        // VRセッション開始/終了時のUI切り替え
-        renderer.xr.addEventListener('sessionstart', () => { uiContainer.style.display = 'none'; });
-        renderer.xr.addEventListener('sessionend', () => { uiContainer.style.display = 'block'; });
+        renderer.xr.addEventListener('sessionstart', () => { 
+            isVR = true; 
+            uiContainer.querySelectorAll('.ui-element').forEach(el => el.style.display = 'none');
+            vrInstructions.style.display = 'block';
+        });
+        renderer.xr.addEventListener('sessionend', () => { 
+            isVR = false; 
+            uiContainer.querySelectorAll('.ui-element').forEach(el => el.style.display = 'flex');
+            vrInstructions.style.display = 'none';
+        });
 
-        // DROPボタン (Mobile用)
         spawnBtn.addEventListener('touchstart', (e) => { e.preventDefault(); spawnObject(); }, { passive: false });
         spawnBtn.addEventListener('click', (e) => { spawnObject(); });
-
-        // JUMPボタン (Mobile用)
-        jumpBtn.addEventListener('touchstart', (e) => {
-            e.preventDefault();
+        
+        const doJump = () => {
             if (canJump) {
-                const jumpVector = new CANNON.Vec3(0, jumpImpulse, 0);
-                playerBody.applyImpulse(jumpVector, playerBody.position);
+                playerBody.applyImpulse(new CANNON.Vec3(0, jumpImpulse, 0), playerBody.position);
                 canJump = false;
             }
-        }, { passive: false });
+        };
+        jumpBtn.addEventListener('touchstart', (e) => { e.preventDefault(); doJump(); }, { passive: false });
 
-
-        // ジョイスティック, 視点操作 (前回と同じロジックを維持)
-        let joyId = null; let joyCenter = { x: 0, y: 0 };
-        const joystickZone = document.getElementById('joystick-zone');
-        
-        joystickZone.addEventListener('touchstart', (e) => {
-            e.preventDefault(); const t = e.changedTouches[0]; joyId = t.identifier;
-            const rect = joystickZone.getBoundingClientRect(); joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 };
-            moveJoy(t.clientX, t.clientY);
-        }, { passive: false });
-        joystickZone.addEventListener('touchmove', (e) => {
-            e.preventDefault(); for (let i = 0; i < e.changedTouches.length; i++) {
-                if (e.changedTouches[i].identifier === joyId) moveJoy(e.changedTouches[i].clientX, e.changedTouches[i].clientY);
-            }
-        }, { passive: false });
-        joystickZone.addEventListener('touchend', (e) => {
-            e.preventDefault(); input.x = 0; input.y = 0; joystickKnob.style.transform = `translate(-50%, -50%)`;
-        }, { passive: false });
-
-        function moveJoy(x, y) {
-            const maxR = 40; let dx = x - joyCenter.x; let dy = y - joyCenter.y; const dist = Math.sqrt(dx*dx + dy*dy);
-            if(dist > maxR) { dx = (dx/dist)*maxR; dy = (dy/dist)*maxR; }
-            joystickKnob.style.transform = `translate(-50%, -50%) translate(${dx}px, ${dy}px)`;
-            input.x = dx / maxR; input.y = dy / maxR;
-        }
+        let joyId = null, joyCenter = { x: 0, y: 0 };
+        joystickZone.addEventListener('touchstart', (e) => { e.preventDefault(); const t = e.changedTouches[0]; joyId = t.identifier; const rect = joystickZone.getBoundingClientRect(); joyCenter = { x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }; moveJoy(t.clientX, t.clientY); }, { passive: false });
+        joystickZone.addEventListener('touchmove', (e) => { e.preventDefault(); for (let i = 0; i < e.changedTouches.length; i++) { if (e.changedTouches[i].identifier === joyId) moveJoy(e.changedTouches[i].clientX, e.changedTouches[i].clientY); } }, { passive: false });
+        joystickZone.addEventListener('touchend', (e) => { e.preventDefault(); input.x = 0; input.y = 0; joystickKnob.style.transform = `translate(-50%, -50%)`; }, { passive: false });
+        function moveJoy(x, y) { const maxR = 40; let dx = x - joyCenter.x; let dy = y - joyCenter.y; const dist = Math.sqrt(dx*dx + dy*dy); if(dist > maxR) { dx = (dx/dist)*maxR; dy = (dy/dist)*maxR; } joystickKnob.style.transform = `translate(-50%, -50%) translate(${dx}px, ${dy}px)`; input.x = dx / maxR; input.y = dy / maxR; }
 
         let lastX, lastY;
         lookZone.addEventListener('touchstart', (e) => { lastX = e.touches[0].clientX; lastY = e.touches[0].clientY; }, { passive: false });
-        lookZone.addEventListener('touchmove', (e) => {
-            e.preventDefault(); const x = e.touches[0].clientX; const y = e.touches[0].clientY;
-            if (lastX != null) {
-                cameraAngle.yaw -= (x - lastX) * 0.005; cameraAngle.pitch -= (y - lastY) * 0.005;
-                cameraAngle.pitch = Math.max(-1.5, Math.min(1.5, cameraAngle.pitch));
-            } lastX = x; lastY = y;
-        }, { passive: false });
+        lookZone.addEventListener('touchmove', (e) => { e.preventDefault(); const x = e.touches[0].clientX; const y = e.touches[0].clientY; if (lastX != null) { cameraAngle.yaw -= (x - lastX) * 0.005; cameraAngle.pitch -= (y - lastY) * 0.005; cameraAngle.pitch = Math.max(-1.5, Math.min(1.5, cameraAngle.pitch)); } lastX = x; lastY = y; }, { passive: false });
         lookZone.addEventListener('touchend', () => { lastX = null; lastY = null; });
 
-
-        // --- 8. メインループ (VR対応) ---
+        // --- メインループ ---
         const clock = new THREE.Clock();
+        let jumpButtonPressedPrev = false;
 
         renderer.setAnimationLoop(() => {
             const dt = Math.min(clock.getDelta(), 0.1);
-            world.step(timeStep, dt, 3);
+            
+            // 掴んでいる場合、手の物理ボディをコントローラーの位置に更新
+            if (isVR) {
+                controller2.getWorldPosition(controllerPosCurr);
+                if (grabConstraint) {
+                    handBody.position.copy(controllerPosCurr);
+                }
+                // 投げるための速度計算 (差分 / 経過時間)
+                controllerVelocity.subVectors(controllerPosCurr, controllerPosPrev).divideScalar(dt);
+                controllerPosPrev.copy(controllerPosCurr);
+            }
+            
+            world.step(timeStep, dt, 5); // 物理ステップ
 
-            // ジャンプ判定
-            if (playerBody.position.y <= playerRadius + 0.1) { canJump = true; }
+            if (playerBody.position.y <= playerRadius + 0.15) canJump = true;
 
-            if (renderer.xr.isPresenting) {
-                // ★ VRモードの移動ロジック ★
-                
-                let vrMoveX = 0;
-                let vrMoveZ = 0;
-                
+            if (isVR) {
+                // --- VRモード移動 & ジャンプ ---
+                let vrMoveX = 0, vrMoveZ = 0;
+                let jumpButtonPressed = false;
                 const session = renderer.xr.getSession();
                 if (session && session.inputSources) {
                     for (const source of session.inputSources) {
-                        if (source.gamepad && source.handedness === 'left') {
-                            // 左手コントローラーのジョイスティックを取得 (axes[2], axes[3])
+                        if (!source.gamepad) continue;
+                        if (source.handedness === 'left') {
                             const axes = source.gamepad.axes;
-                            if (axes.length >= 4) {
-                                vrMoveX = axes[2]; // X軸 (左右)
-                                vrMoveZ = axes[3]; // Y軸 (前後)
+                            if (axes.length >= 4) { vrMoveX = axes[2]; vrMoveZ = axes[3]; }
+                        }
+                        if (source.handedness === 'right') {
+                            // Aボタン (通常 buttons[4]) またはスティック押し込み(buttons[3]) でジャンプ
+                            const btns = source.gamepad.buttons;
+                            if ((btns[4] && btns[4].pressed) || (btns[3] && btns[3].pressed)) {
+                                jumpButtonPressed = true;
                             }
                         }
                     }
                 }
-                
-                // ヘッドセットの向きを取得
+
+                // ジャンプ実行 (ボタンが押された瞬間のみ)
+                if (jumpButtonPressed && !jumpButtonPressedPrev) {
+                    doJump();
+                }
+                jumpButtonPressedPrev = jumpButtonPressed;
+
+                // 移動実行
                 const headRotation = new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ');
-                
-                const speed = moveSpeed * dt;
-                
-                // VR移動ベクトルを計算 (水平移動のみ)
                 if (Math.abs(vrMoveX) > 0.1 || Math.abs(vrMoveZ) > 0.1) {
                     const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), headRotation.y);
                     const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), headRotation.y);
-                    
-                    const moveVec = new THREE.Vector3()
-                        .addScaledVector(right, vrMoveX)
-                        .addScaledVector(forward, vrMoveZ)
-                        .normalize().multiplyScalar(speed);
-                    
-                    playerBody.velocity.x += moveVec.x * 5; // 力を加える
-                    playerBody.velocity.z += moveVec.z * 5;
+                    const moveVec = new THREE.Vector3().addScaledVector(right, vrMoveX).addScaledVector(forward, vrMoveZ).normalize().multiplyScalar(moveSpeed);
+                    // 速度を直接設定せず、力を加えて制御する方が自然だが、簡易的に速度制限付きで適用
+                    playerBody.velocity.x = moveVec.x * 0.8 + playerBody.velocity.x * 0.2;
+                    playerBody.velocity.z = moveVec.z * 0.8 + playerBody.velocity.z * 0.2;
+                } else {
+                    // 入力がないときは減速
+                    playerBody.velocity.x *= 0.9;
+                    playerBody.velocity.z *= 0.9;
                 }
-                
-                // カメラ（ヘッドセット）を物理ボディに追従させる
-                dolly.position.copy(playerBody.position);
-                dolly.position.y += playerHeight - playerRadius; 
 
             } else {
-                // ★ スマホ/PCモードの移動ロジック ★
-                
+                // --- スマホモード移動 ---
                 const forward = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngle.yaw);
                 const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0, 1, 0), cameraAngle.yaw);
-                
-                const moveVec = new THREE.Vector3()
-                    .addScaledVector(right, input.x)
-                    .addScaledVector(forward, -input.y)
-                    .normalize().multiplyScalar(moveSpeed);
-                
-                playerBody.velocity.x = moveVec.x;
-                playerBody.velocity.z = moveVec.z;
-
-                dolly.position.copy(playerBody.position);
-                dolly.position.y += playerHeight - playerRadius;
-                
+                const moveVec = new THREE.Vector3().addScaledVector(right, input.x).addScaledVector(forward, -input.y).normalize().multiplyScalar(moveSpeed);
+                playerBody.velocity.x = moveVec.x; playerBody.velocity.z = moveVec.z;
                 camera.rotation.set(cameraAngle.pitch, cameraAngle.yaw, 0, 'YXZ');
             }
+            
+            dolly.position.copy(playerBody.position);
+            dolly.position.y -= playerRadius; // 物理ボディ中心から足元へ補正
 
-            // オブジェクトの同期
             for (const obj of objects) {
                 obj.mesh.position.copy(obj.body.position);
                 obj.mesh.quaternion.copy(obj.body.quaternion);
             }
-
             renderer.render(scene, camera);
         });
 
-        // リサイズ
         window.addEventListener('resize', () => {
             camera.aspect = window.innerWidth / window.innerHeight;
             camera.updateProjectionMatrix();
