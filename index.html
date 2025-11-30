@@ -83,7 +83,7 @@
         
         const playerHeight = 1.7;
         const playerRadius = 0.3;
-        const playerBody = new CANNON.Body({ mass: 80, shape: new CANNON.Sphere(playerRadius), material: physicsMat, fixedRotation: true, linearDamping: 0.95 });
+        const playerBody = new CANNON.Body({ mass: 80, shape: new CANNON.Sphere(playerRadius), material: physicsMat, fixedRotation: true, linearDamping: 0.05 });
         playerBody.position.set(0, 5, 0);
         world.addBody(playerBody);
 
