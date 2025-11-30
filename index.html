@@ -154,7 +154,7 @@
         // --- ★ 錬金術エレベーターロジック ---
         let isAlchemyActive = false;
         let activePillar = null;
-        const alchemySpeed = 4.0; 
+        const alchemySpeed = 8.0; 
 
         function startAlchemy() {
             if (activePillar) return; 
@@ -404,7 +404,7 @@
                 }
 
                 // デッドゾーン
-                const deadZone = 0.10;
+                const deadZone = 0.05;
                 const mag = Math.sqrt(vrMoveX*vrMoveX + vrMoveZ*vrMoveZ);
                 if (mag > deadZone) {
                     // スティックの強さで速度をスケール（normalize を使わない）
