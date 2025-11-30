@@ -382,7 +382,12 @@
                     for (const source of session.inputSources) {
                         if (!source.gamepad) continue;
                         if (source.handedness === 'left') { // Move
-                            const axes = source.gamepad.axes; if (axes.length >= 4) { vrMoveX = axes[2]; vrMoveZ = axes[3]; }
+                            const axes = source.gamepad.axes;
+                            // 修正: 左スティックは通常 axes[0], axes[1]
+                            if (axes.length >= 2) {
+                                vrMoveX = axes[0];              // 左右
+                                vrMoveZ = -axes[1];             // 上押しを正の前進にするため反転
+                            }
                         }
                         if (source.handedness === 'right') { // Rotate & Jump
                             const axes = source.gamepad.axes; if (axes.length >= 4) { vrRotX = axes[2]; }
@@ -398,15 +403,27 @@
                     dolly.rotation.y -= vrRotX * turnSpeed * dt;
                 }
 
-                if (Math.abs(vrMoveX) > 0.1 || Math.abs(vrMoveZ) > 0.1) {
+                // デッドゾーン
+                const deadZone = 0.10;
+                const mag = Math.sqrt(vrMoveX*vrMoveX + vrMoveZ*vrMoveZ);
+                if (mag > deadZone) {
+                    // スティックの強さで速度をスケール（normalize を使わない）
+                    const strength = Math.min(1, (mag - deadZone) / (1 - deadZone)); // deadzone後の 0..1
+                    // 視点に対しての前/右ベクトル
                     const headRotY = dolly.rotation.y + new THREE.Euler().setFromQuaternion(camera.quaternion, 'YXZ').y;
                     const forward = new THREE.Vector3(0,0,-1).applyAxisAngle(new THREE.Vector3(0,1,0), headRotY);
                     const right = new THREE.Vector3(1,0,0).applyAxisAngle(new THREE.Vector3(0,1,0), headRotY);
 
-                    const moveVec = right.multiplyScalar(vrMoveX).add(forward.multiplyScalar(vrMoveZ)).normalize().multiplyScalar(moveSpeed);
+                    // そのまま合成（スティックの比率を保つ）
+                    const moveVec = new THREE.Vector3().addScaledVector(right, vrMoveX).addScaledVector(forward, vrMoveZ);
+                    // スケールを strength * moveSpeed にする
+                    moveVec.setLength(moveSpeed * strength);
+
+                    // 緩やかな反映（スムース）
                     playerBody.velocity.x = moveVec.x * 0.8 + playerBody.velocity.x * 0.2;
                     playerBody.velocity.z = moveVec.z * 0.8 + playerBody.velocity.z * 0.2;
                 } else {
+                    // ブレーキ
                     playerBody.velocity.x *= 0.9; playerBody.velocity.z *= 0.9;
                 }
             } else {
