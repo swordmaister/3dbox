@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>WebXR Alchemy Elevator</title>
+    <title>WebXR Alchemy - Stable Grab</title>
     <style>
         body { margin: 0; overflow: hidden; background-color: #000; touch-action: none; font-family: sans-serif; }
         canvas { display: block; width: 100%; height: 100%; }
@@ -17,7 +17,6 @@
         #jump-btn { position: absolute; left: 160px; bottom: 40px; width: 80px; height: 60px; background: #ff9800; color: white; border-radius: 8px; font-weight: bold; font-size: 14px; }
         #jump-btn:active { transform: scale(0.9); background: #e68900; }
 
-        /* 錬金術ボタン (長押し対応) */
         #alchemy-btn { position: absolute; right: 120px; bottom: 40px; width: 80px; height: 60px; background: #795548; color: white; border-radius: 8px; font-weight: bold; font-size: 12px; }
         #alchemy-btn:active { transform: scale(0.9); background: #5D4037; border-color: #ffcc00; }
 
@@ -40,8 +39,7 @@
         <div id="vr-instructions">
             左スティック: 移動 / 左トリガー: 出す<br>
             右スティック: 回転 / 右トリガー: 掴む・投げる<br>
-            右Aボタン: ジャンプ<br>
-            <span style="color: #ffcc00; font-weight: bold;">★両手を地面につけるとエレベーター錬成！</span>
+            <span style="color: #ffcc00; font-weight: bold;">★左右トリガー同時押し：エレベーター錬成</span>
         </div>
     </div>
 
@@ -74,9 +72,9 @@
         // --- 物理エンジン ---
         const world = new CANNON.World();
         world.gravity.set(0, -9.82, 0);
-        world.solver.iterations = 15; // エレベーターの安定性のため少し増やす
+        world.solver.iterations = 20; // 安定性重視
         const physicsMat = new CANNON.Material();
-        const contactMat = new CANNON.ContactMaterial(physicsMat, physicsMat, { friction: 0.5, restitution: 0.1 }); // 滑りにくく、跳ねない
+        const contactMat = new CANNON.ContactMaterial(physicsMat, physicsMat, { friction: 0.5, restitution: 0.1 });
         world.addContactMaterial(contactMat);
 
         const groundBody = new CANNON.Body({ mass: 0, shape: new CANNON.Plane(), material: physicsMat });
@@ -154,37 +152,33 @@
         const line1 = new THREE.Line(lineGeo); line1.scale.z = 5; controller1.add(line1);
         
         // --- ★ 錬金術エレベーターロジック ---
-        let isAlchemyActive = false; // ボタンが押されているか
-        let activePillar = null; // 現在成長中の柱データ
-
-        const alchemySpeed = 4.0; // 上昇速度
+        let isAlchemyActive = false;
+        let activePillar = null;
+        const alchemySpeed = 4.0; 
 
         function startAlchemy() {
-            if (activePillar) return; // 既に生成中なら無視
+            if (activePillar) return; 
 
-            // プレイヤーの真下（地面）からスタート
+            // プレイヤーの真下からスタート
             const spawnPos = playerBody.position.clone();
-            spawnPos.y = 0; // 地面から
+            spawnPos.y = 0; 
 
-            const width = 1.5; // プレイヤーが乗りやすいサイズ
+            const width = 1.5; 
             const depth = 1.5;
             
-            // 視覚用メッシュ（最初は高さ0）
-            const geo = new THREE.BoxGeometry(width, 1, depth); // 高さはスケールで変えるので初期値1
+            const geo = new THREE.BoxGeometry(width, 1, depth);
             const mat = new THREE.MeshStandardMaterial({ color: 0x8D6E63, roughness: 1.0 });
             const mesh = new THREE.Mesh(geo, mat);
             mesh.position.copy(spawnPos);
-            mesh.scale.y = 0.1; // 最初は平ら
+            mesh.scale.y = 0.1; 
             mesh.castShadow = true;
             mesh.receiveShadow = true;
             scene.add(mesh);
 
-            // 物理ボディ（プレイヤーを押し上げるためのKinematicボディ）
-            // Kinematicは物理法則無視で動かせるが、Dynamicボディ（プレイヤー）を押しのける力を持つ
             const body = new CANNON.Body({ 
                 mass: 0, 
                 type: CANNON.Body.KINEMATIC, 
-                shape: new CANNON.Box(new CANNON.Vec3(width/2, 0.1, depth/2)), // 厚さあるプレートとして生成
+                shape: new CANNON.Box(new CANNON.Vec3(width/2, 0.1, depth/2)),
                 material: physicsMat
             });
             body.position.copy(spawnPos);
@@ -197,55 +191,45 @@
             if (!activePillar) return;
 
             if (isAlchemyActive) {
-                // --- 成長中 ---
-                
-                // 1. 物理的な「天板」を上昇させる
-                // 速度を設定することで、乗っているプレイヤーも物理演算で押し上げられる
+                // 上昇
                 activePillar.body.velocity.set(0, alchemySpeed, 0);
-                
-                // 高さ管理
                 activePillar.currentHeight = activePillar.body.position.y;
-
-                // 2. 見た目の柱を伸ばす
-                // 天板の位置に合わせて、地面から天板までの柱を描画
-                // メッシュの中心位置 = 現在の高さ / 2
                 activePillar.mesh.position.y = activePillar.currentHeight / 2;
                 activePillar.mesh.scale.y = activePillar.currentHeight;
-
             } else {
-                // --- ボタンを離した（固定化） ---
-                
-                // 現在の形状で固定するためのStaticボディに置き換え
+                // 固定化
                 const finalHeight = activePillar.currentHeight;
                 if (finalHeight > 0.2) {
                     const staticBody = new CANNON.Body({
-                        mass: 0, // 完全固定
+                        mass: 0,
                         shape: new CANNON.Box(new CANNON.Vec3(activePillar.width/2, finalHeight/2, activePillar.depth/2)),
                         material: physicsMat
                     });
                     staticBody.position.set(activePillar.spawnPos.x, finalHeight/2, activePillar.spawnPos.z);
                     world.addBody(staticBody);
-                    
-                    // リストに追加（数が増えたら消す用）
                     objects.push({ mesh: activePillar.mesh, body: staticBody });
                 } else {
-                    // 小さすぎる場合は消去
                     scene.remove(activePillar.mesh);
                 }
-
-                // 成長用の一時ボディを削除
                 world.removeBody(activePillar.body);
                 activePillar = null;
             }
         }
 
-        // --- 掴む機能 ---
+        // --- 掴む機能 (回転防止強化版) ---
         let grabbedObject = null;
         let grabConstraint = null;
+        
+        // 手のボディ
         const handBody = new CANNON.Body({ mass: 0, type: CANNON.Body.KINEMATIC });
-        handBody.collisionFilterGroup = 0; handBody.collisionFilterMask = 0; world.addBody(handBody);
-        const controllerPosPrev = new THREE.Vector3(); const controllerPosCurr = new THREE.Vector3(); const controllerVelocity = new THREE.Vector3();
+        handBody.collisionFilterGroup = 0; handBody.collisionFilterMask = 0; 
+        world.addBody(handBody);
 
+        const controllerPosPrev = new THREE.Vector3(); 
+        const controllerPosCurr = new THREE.Vector3(); 
+        const controllerVelocity = new THREE.Vector3();
+
+        // 左トリガー: ドロップ
         controller1.addEventListener('selectstart', () => {
             const tempMatrix = new THREE.Matrix4(); tempMatrix.identity().extractRotation(controller1.matrixWorld);
             const dir = new THREE.Vector3(0, 0, -1).applyMatrix4(tempMatrix);
@@ -253,21 +237,38 @@
             spawnObject(pos, dir);
         });
 
+        // 右トリガー: 掴む
         controller2.addEventListener('selectstart', () => {
             if (grabbedObject) return;
             const pos = controller2.getWorldPosition(new THREE.Vector3());
             let closest = 1.5, target = null;
             for (const obj of objects) { const d = pos.distanceTo(obj.mesh.position); if (d < closest && obj.body.mass > 0) { closest = d; target = obj.body; } }
+            
             if (target) {
-                grabbedObject = target; handBody.position.copy(pos);
+                grabbedObject = target; 
+                handBody.position.copy(pos);
                 grabConstraint = new CANNON.PointToPointConstraint(handBody, new CANNON.Vec3(0,0,0), grabbedObject, new CANNON.Vec3(0,0,0));
                 world.addConstraint(grabConstraint);
+                
+                // ★ 回転防止対策: 掴んだ瞬間に回転抵抗(Damping)を極端に上げる
+                grabbedObject.angularDamping = 0.99; 
             }
         });
+
         controller2.addEventListener('selectend', () => {
             if (grabbedObject && grabConstraint) {
-                world.removeConstraint(grabConstraint); grabConstraint = null;
-                grabbedObject.velocity.set(controllerVelocity.x * 1.5, controllerVelocity.y * 1.5, controllerVelocity.z * 1.5);
+                world.removeConstraint(grabConstraint); 
+                grabConstraint = null;
+                
+                // 投げる
+                grabbedObject.velocity.set(controllerVelocity.x * 2.0, controllerVelocity.y * 2.0, controllerVelocity.z * 2.0);
+                
+                // ★ 回転抵抗を元に戻す（空中で自然に回転するように）
+                grabbedObject.angularDamping = 0.01;
+                
+                // 少し回転を加える
+                grabbedObject.angularVelocity.set(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).scale(5);
+                
                 grabbedObject = null;
             }
         });
@@ -310,17 +311,8 @@
         const doJump = () => { if (canJump) { playerBody.applyImpulse(new CANNON.Vec3(0, jumpImpulse, 0), playerBody.position); canJump = false; } };
         jumpBtn.addEventListener('touchstart', (e) => { e.preventDefault(); doJump(); }, { passive: false });
         
-        // --- 錬金術ボタン操作 (Mobile) ---
-        alchemyBtn.addEventListener('touchstart', (e) => { 
-            e.preventDefault(); 
-            isAlchemyActive = true; 
-            startAlchemy(); // ボタンを押した瞬間に錬成開始
-        }, { passive: false });
-        
-        alchemyBtn.addEventListener('touchend', (e) => { 
-            e.preventDefault(); 
-            isAlchemyActive = false; // ボタンを離したら停止
-        }, { passive: false });
+        alchemyBtn.addEventListener('touchstart', (e) => { e.preventDefault(); isAlchemyActive = true; startAlchemy(); }, { passive: false });
+        alchemyBtn.addEventListener('touchend', (e) => { e.preventDefault(); isAlchemyActive = false; }, { passive: false });
 
 
         let joyId = null, joyCenter = { x: 0, y: 0 };
@@ -343,15 +335,29 @@
 
             if (isVR) {
                 controller2.getWorldPosition(controllerPosCurr);
-                if (grabConstraint) handBody.position.copy(controllerPosCurr);
+                if (grabConstraint) {
+                    handBody.position.copy(controllerPosCurr);
+                    // ★ 掴んでいる間、回転速度を強制的にゼロにする（暴れ防止）
+                    if(grabbedObject) {
+                        grabbedObject.angularVelocity.set(0,0,0);
+                    }
+                }
                 controllerVelocity.subVectors(controllerPosCurr, controllerPosPrev).divideScalar(dt);
                 controllerPosPrev.copy(controllerPosCurr);
 
-                // --- 錬金術判定 (VR: 両手が地面に近いか) ---
-                const p1 = controller1.getWorldPosition(new THREE.Vector3());
-                const p2 = controller2.getWorldPosition(new THREE.Vector3());
-                // 手が地面近くにある間、isAlchemyActiveをONにする
-                if (p1.y < 0.3 && p2.y < 0.3) {
+                // --- ★ 錬金術判定 (L+R トリガー同時押し) ---
+                let lTrig = false, rTrig = false;
+                const session = renderer.xr.getSession();
+                if (session && session.inputSources) {
+                    for (const source of session.inputSources) {
+                        if (!source.gamepad) continue;
+                        if (source.handedness === 'left') { if(source.gamepad.buttons[0].pressed) lTrig = true; }
+                        if (source.handedness === 'right') { if(source.gamepad.buttons[0].pressed) rTrig = true; }
+                    }
+                }
+                
+                // 両方のトリガーが押されている場合のみ発動
+                if (lTrig && rTrig) {
                     if (!isAlchemyActive) {
                         isAlchemyActive = true;
                         startAlchemy();
