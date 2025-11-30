@@ -380,15 +380,23 @@
                 const session = renderer.xr.getSession();
                 if (session && session.inputSources) {
                     for (const source of session.inputSources) {
-                        if (!source.gamepad) continue;
-                        if (source.handedness === 'left') { // Move
-                            const axes = source.gamepad.axes;
-                            // 修正: 左スティックは通常 axes[0], axes[1]
-                            if (axes.length >= 2) {
-                                vrMoveX = axes[0];              // 左右
-                                vrMoveZ = -axes[1];             // 上押しを正の前進にするため反転
-                            }
-                        }
+                        if (!source.gamepad) if (source.handedness === 'left') { 
+    const axes = source.gamepad.axes;
+
+    // 左スティック位置の自動判別
+    if (axes.length >= 4) {
+        const lx = Math.abs(axes[0]) + Math.abs(axes[1]);
+        const rx = Math.abs(axes[2]) + Math.abs(axes[3]);
+
+        if (lx > rx) {
+            vrMoveX = axes[0];
+            vrMoveZ = -axes[1];
+        } else {
+            vrMoveX = axes[2];
+            vrMoveZ = -axes[3];
+        }
+    }
+}
                         if (source.handedness === 'right') { // Rotate & Jump
                             const axes = source.gamepad.axes; if (axes.length >= 4) { vrRotX = axes[2]; }
                             const btns = source.gamepad.buttons; if ((btns[4] && btns[4].pressed) || (btns[3] && btns[3].pressed)) { jumpButtonPressed = true; }
