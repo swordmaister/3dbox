@@ -3,37 +3,36 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-<title>Mobile VR Dev Kit (トラッキング対応)</title>
+<title>Meta Quest 2 WebXR Emulator</title>
 <style>
-    /* --- 基本スタイル --- */
+    /* --- 全体スタイル --- */
     :root {
-        --bg-color: #1e1e1e;
-        --editor-bg: #2d2d2d;
+        --bg-color: #121212;
+        --editor-bg: #1e1e1e;
         --text-color: #e0e0e0;
         --accent-color: #007acc;
-        --danger-color: #d9534f;
+        --danger-color: #d32f2f;
+        --ui-bg: rgba(20, 20, 20, 0.85);
+        --zone-bg: rgba(50, 50, 50, 0.4);
     }
     body {
         margin: 0; padding: 0;
         background-color: var(--bg-color);
         color: var(--text-color);
-        font-family: monospace;
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         height: 100vh;
         overflow: hidden;
         display: flex;
         flex-direction: column;
     }
-    button, select {
-        font-family: sans-serif;
-        touch-action: manipulation;
-    }
+    button, select { touch-action: manipulation; }
 
-    /* --- 1. エディタ画面 UI (変更なし) --- */
+    /* --- エディタ画面 --- */
     #editor-screen {
         display: flex;
         flex-direction: column;
         height: 100%;
-        padding: 10px;
+        padding: 8px;
         box-sizing: border-box;
     }
     .toolbar {
@@ -41,53 +40,40 @@
         flex-wrap: wrap;
         gap: 8px;
         margin-bottom: 8px;
-        align-items: center;
+        justify-content: space-between;
     }
     .toolbar-group {
         display: flex;
-        gap: 4px;
-        background: #333;
-        padding: 4px;
-        border-radius: 6px;
+        gap: 6px;
     }
     select {
-        background: #444; color: #fff; border: 1px solid #555;
-        padding: 8px; border-radius: 4px; font-size: 14px;
+        background: #333; color: #fff; border: 1px solid #555;
+        padding: 6px; border-radius: 4px;
     }
     .btn {
-        background: #444; color: #fff; border: none;
-        padding: 8px 12px; border-radius: 4px; font-size: 13px; cursor: pointer;
+        background: #333; color: #fff; border: 1px solid #555;
+        padding: 6px 12px; border-radius: 4px; font-size: 13px; cursor: pointer;
     }
-    .btn:active { background: #666; }
-    .btn-primary { background: var(--accent-color); font-weight: bold; }
-    .btn-danger { background: var(--danger-color); }
-    
+    .btn:active { background: #555; }
+    .btn-run { background: #2e7d32; border-color: #1b5e20; width: 100%; padding: 12px; font-weight: bold; font-size: 16px; margin-top: 5px; }
+    .btn-danger { background: var(--danger-color); border-color: #b71c1c; }
+
     #code-area {
         flex-grow: 1;
         background-color: var(--editor-bg);
-        color: #fff;
+        color: #f8f8f2;
         border: 1px solid #444;
         padding: 10px;
-        font-size: 14px;
+        font-family: 'Consolas', 'Monaco', monospace;
+        font-size: 12px;
         resize: none;
         outline: none;
         border-radius: 4px;
         white-space: pre;
-        overflow-x: auto;
+        overflow: auto;
     }
 
-    #run-btn {
-        margin-top: 10px;
-        padding: 15px;
-        font-size: 18px;
-        background: #0a0;
-        color: white;
-        border: none;
-        border-radius: 6px;
-        width: 100%;
-    }
-
-    /* --- 2. VRエミュレータ画面 UI --- */
+    /* --- エミュレータ画面 --- */
     #emulator-screen {
         display: none;
         position: fixed;
@@ -95,99 +81,102 @@
         background: #000;
         z-index: 100;
     }
-    
-    /* 実行されるiframe */
-    #vr-frame {
-        width: 100%; height: 100%; border: none;
-        display: block;
-    }
+    #vr-frame { width: 100%; height: 100%; border: none; display: block; }
 
-    /* オーバーレイUI */
+    /* --- オーバーレイUI --- */
+    #ui-header {
+        position: absolute; top: 0; left: 0; width: 100%;
+        padding: 10px; box-sizing: border-box;
+        display: flex; justify-content: space-between; align-items: flex-start;
+        pointer-events: none; /* ボタン以外は透過 */
+    }
     #exit-btn {
-        position: absolute;
-        top: 10px; left: 10px;
-        width: 40px; height: 40px;
-        background: rgba(255, 0, 0, 0.7);
-        color: white;
-        border: 2px solid white;
-        border-radius: 50%;
-        font-size: 24px;
-        line-height: 36px;
-        text-align: center;
-        z-index: 200;
-        cursor: pointer;
+        pointer-events: auto;
+        background: rgba(200, 0, 0, 0.8); color: white;
+        border: 2px solid white; border-radius: 50%;
+        width: 36px; height: 36px;
+        display: flex; justify-content: center; align-items: center;
+        font-weight: bold; cursor: pointer;
     }
-    
-    #controls-overlay {
-        position: absolute;
-        bottom: 0; left: 0; width: 100%; height: 40%;
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-end;
-        padding: 10px;
-        box-sizing: border-box;
+    #status-display {
+        background: rgba(0,0,0,0.6); color: #0f0;
+        font-size: 11px; padding: 4px 8px; border-radius: 4px;
+        text-align: right;
     }
 
-    /* コントローラーパーツ */
+    /* コントロールパネル */
+    #controls-overlay {
+        position: absolute; bottom: 0; left: 0; width: 100%;
+        height: 38%; /* 画面下部38%を使用 */
+        background: linear-gradient(to top, rgba(0,0,0,0.9), rgba(0,0,0,0));
+        display: flex; justify-content: space-around; align-items: flex-end;
+        padding: 10px 5px; box-sizing: border-box;
+        pointer-events: none; /* 隙間はタッチスルー */
+    }
+
     .control-zone {
         pointer-events: auto;
-        background: rgba(50, 50, 50, 0.5);
-        border-radius: 10px;
-        padding: 5px;
-        display: flex;
-        flex-direction: column;
-        align-items: center;
-        gap: 5px;
-        width: 30%; /* 3つのゾーンを配置するため幅を調整 */
+        background: var(--zone-bg);
+        border: 1px solid rgba(255,255,255,0.1);
+        border-radius: 12px;
+        padding: 6px;
+        display: flex; flex-direction: column; align-items: center;
+        gap: 6px;
+        width: 32%; height: 100%;
+        box-sizing: border-box;
     }
+    .zone-label { color: #aaa; font-size: 10px; font-weight: bold; margin-bottom: 2px; }
 
-    .v-btn {
-        width: 40px; height: 40px;
-        background: rgba(255, 255, 255, 0.2);
-        border: 2px solid rgba(255, 255, 255, 0.5);
+    /* トラッキングパッド */
+    .track-pad {
+        flex-grow: 1; width: 100%;
+        background: rgba(0,0,0,0.3);
+        border: 1px dashed rgba(255,255,255,0.3);
+        border-radius: 8px;
+        position: relative; touch-action: none;
+    }
+    .track-knob {
+        width: 16px; height: 16px;
+        background: #ffeb3b;
+        border: 2px solid #fff;
         border-radius: 50%;
-        color: white;
-        font-weight: bold;
+        position: absolute; top: 50%; left: 50%;
+        transform: translate(-50%, -50%);
+        pointer-events: none;
+        box-shadow: 0 0 5px rgba(255, 235, 59, 0.8);
+    }
+    
+    /* ボタン群 */
+    .btn-row { display: flex; gap: 8px; justify-content: center; width: 100%; }
+    .vr-btn {
+        width: 38px; height: 38px;
+        background: rgba(255,255,255,0.15);
+        border: 1px solid rgba(255,255,255,0.4);
+        border-radius: 50%;
+        color: white; font-size: 11px; font-weight: bold;
         display: flex; justify-content: center; align-items: center;
         user-select: none;
     }
-    .v-btn:active { background: rgba(0, 255, 0, 0.5); border-color: #0f0; }
+    .vr-btn:active { background: var(--accent-color); border-color: #fff; }
+    .vr-btn.wide { width: 100%; border-radius: 6px; height: 30px; }
 
-    /* トラッキングパッド */
-    .tracking-pad {
-        width: 80px; height: 80px;
-        background: rgba(0, 0, 0, 0.3);
-        border: 1px dashed rgba(255, 255, 255, 0.5);
-        position: relative;
-        touch-action: none;
-        margin-bottom: 5px;
-    }
-    .pad-label {
-        color: #aaa; font-size: 10px; margin-bottom: 5px;
-    }
-
-    #joystick-area {
-        width: 80px; height: 80px;
-        background: rgba(255, 255, 255, 0.1);
+    /* ジョイスティック */
+    #joy-bg {
+        width: 70px; height: 70px;
+        background: rgba(255,255,255,0.1);
         border-radius: 50%;
-        position: relative;
-        touch-action: none;
+        position: relative; touch-action: none;
+        margin: auto;
     }
-    #joystick-knob {
+    #joy-stick {
         width: 30px; height: 30px;
-        background: rgba(0, 150, 255, 0.8);
+        background: var(--accent-color);
         border-radius: 50%;
-        position: absolute;
-        top: 50%; left: 50%;
+        position: absolute; top: 50%; left: 50%;
         transform: translate(-50%, -50%);
         pointer-events: none;
     }
-    
-    #gyro-status {
-        position: absolute; top: 10px; right: 10px;
-        color: lime; font-size: 12px;
-        background: rgba(0,0,0,0.5); padding: 4px;
-    }
+
 </style>
 </head>
 <body>
@@ -202,609 +191,527 @@
                     <option value="4">Slot 4</option>
                     <option value="5">Slot 5</option>
                 </select>
-                <button class="btn" onclick="saveSlot()">保存</button>
-                <button class="btn" onclick="loadSlot()">読込</button>
+                <button class="btn" onclick="app.io.save()">保存</button>
+                <button class="btn" onclick="app.io.load()">読込</button>
             </div>
             <div class="toolbar-group">
-                <button class="btn" onclick="copyCode()">コピー</button>
-                <button class="btn" onclick="pasteCode()">ペースト</button>
-                <button class="btn btn-danger" onclick="clearCode()">クリア</button>
+                <button class="btn" onclick="app.io.copy()">Copy</button>
+                <button class="btn" onclick="app.io.paste()">Paste</button>
+                <button class="btn btn-danger" onclick="app.io.clear()">Clear</button>
             </div>
         </div>
         
-        <textarea id="code-area" spellcheck="false" placeholder="ここにWebXR対応のHTMLコードを貼り付けてください..."></textarea>
-        
-        <button id="run-btn" onclick="runVR()">VRモード起動 (RUN)</button>
+        <textarea id="code-area" spellcheck="false" placeholder="ここにWebXR対応HTMLコードを貼り付け"></textarea>
+        <button class="btn btn-run" onclick="app.system.run()">▶ VRモード起動</button>
     </div>
 
     <div id="emulator-screen">
-        <div id="exit-btn" onclick="exitVR()">×</div>
-        <div id="gyro-status">Gyro: Ready</div>
+        <div id="ui-header">
+            <div id="exit-btn" onclick="app.system.exit()">×</div>
+            <div id="status-display">Waiting for Gyro...</div>
+        </div>
         
         <iframe id="vr-frame"></iframe>
 
         <div id="controls-overlay">
             
             <div class="control-zone">
-                <span class="pad-label">LEFT TRACKING (X/Y)</span>
-                <div class="tracking-pad" id="left-tracking-pad"></div>
-                <div style="display:flex; gap:5px;">
-                    <div class="v-btn" data-key="trigger" data-hand="left">Trig</div>
-                    <div class="v-btn" data-key="grip" data-hand="left">Grip</div>
+                <span class="zone-label">L-Hand (Pos)</span>
+                <div class="track-pad" id="pad-left">
+                    <div class="track-knob" id="knob-left"></div>
+                </div>
+                <div class="btn-row">
+                    <div class="vr-btn" data-hand="left" data-key="X">X</div>
+                    <div class="vr-btn" data-hand="left" data-key="Y">Y</div>
+                </div>
+                <div class="btn-row">
+                    <div class="vr-btn" data-hand="left" data-key="trigger">Tr</div>
+                    <div class="vr-btn" data-hand="left" data-key="grip">Gr</div>
+                </div>
+            </div>
+
+            <div class="control-zone" style="width: 28%;">
+                <span class="zone-label">Move Body</span>
+                <div style="flex-grow:1; display:flex; align-items:center;">
+                    <div id="joy-bg"><div id="joy-stick"></div></div>
+                </div>
+                <div class="btn-row">
+                    <div class="vr-btn wide" data-hand="left" data-key="menu">MENU</div>
                 </div>
             </div>
 
             <div class="control-zone">
-                <span class="pad-label">HMD MOVE (Joystick)</span>
-                <div id="joystick-area">
-                    <div id="joystick-knob"></div>
+                <span class="zone-label">R-Hand (Pos)</span>
+                <div class="track-pad" id="pad-right">
+                    <div class="track-knob" id="knob-right"></div>
                 </div>
-                <div style="display:flex; gap:5px;">
-                    <div class="v-btn" data-key="menu" data-hand="left">MENU</div>
-                    <div class="v-btn" data-key="X" data-hand="left">X/Y</div>
+                <div class="btn-row">
+                    <div class="vr-btn" data-hand="right" data-key="A">A</div>
+                    <div class="vr-btn" data-hand="right" data-key="B">B</div>
+                </div>
+                <div class="btn-row">
+                    <div class="vr-btn" data-hand="right" data-key="trigger">Tr</div>
+                    <div class="vr-btn" data-hand="right" data-key="grip">Gr</div>
                 </div>
             </div>
             
-            <div class="control-zone">
-                <span class="pad-label">RIGHT TRACKING (X/Y)</span>
-                <div class="tracking-pad" id="right-tracking-pad"></div>
-                <div style="display:flex; gap:5px;">
-                    <div class="v-btn" data-key="trigger" data-hand="right">Trig</div>
-                    <div class="v-btn" data-key="grip" data-hand="right">Grip</div>
-                </div>
-            </div>
         </div>
     </div>
 
     <script>
-        // === 1. WebXR Mock Library (Iframe内に注入されるコード) ===
-        const MOCK_LIB_CODE = `
+        // --- 1. Iframe内に注入するWebXR Mockライブラリ ---
+        const MOCK_LIB = `
         <script>
         (function() {
-            console.log("WebXR Emulator Mock Initialized inside Iframe");
+            console.log("[VR Mock] Initializing inside Iframe...");
             
-            // 内部状態
             const state = {
-                position: [0, 1.6, 0],
-                quaternion: [0, 0, 0, 1],
+                viewer: { position: [0, 1.6, 0], quaternion: [0, 0, 0, 1] },
                 inputs: {
-                    left: { 
-                        axes: [0,0], buttons: {}, 
-                        position: [-0.3, 1.4, -0.5], // 初期位置
-                        quaternion: [0, 0, 0, 1] 
-                    },
-                    right: { 
-                        axes: [0,0], buttons: {}, 
-                        position: [0.3, 1.4, -0.5], // 初期位置
-                        quaternion: [0, 0, 0, 1] 
-                    }
+                    left:  { axes: [0,0], buttons: {}, position: [-0.2, 1.4, -0.5], quaternion: [0,0,0,1] },
+                    right: { axes: [0,0], buttons: {}, position: [ 0.2, 1.4, -0.5], quaternion: [0,0,0,1] }
                 }
             };
 
-            // 親ウィンドウからのメッセージ受信リスナー
+            // 親ウィンドウからのデータ受信
             window.addEventListener('message', (e) => {
                 const msg = e.data;
-                if (!msg || !msg.type || msg.source !== 'VR_HOST') return; 
+                if (!msg || msg.source !== 'VR_HOST') return;
 
-                if (msg.type === 'updateInput') {
-                    const input = state.inputs[msg.hand];
-                    if (msg.axes) input.axes = msg.axes;
-                    if (msg.buttons) Object.assign(input.buttons, msg.buttons);
-                }
-                else if (msg.type === 'updatePose') {
-                    if (msg.position) state.position = msg.position;
-                    if (msg.quaternion) state.quaternion = msg.quaternion;
+                if (msg.type === 'pose') {
+                    if (msg.viewer) state.viewer = msg.viewer;
+                    if (msg.left)  Object.assign(state.inputs.left, msg.left);
+                    if (msg.right) Object.assign(state.inputs.right, msg.right);
                     
-                    if (msg.handPose) {
-                        const hand = state.inputs[msg.handPose.hand];
-                        if (msg.handPose.position) hand.position = msg.handPose.position;
-                        if (msg.handPose.quaternion) hand.quaternion = msg.handPose.quaternion;
+                    // ボタン状態の更新
+                    if (msg.buttons) {
+                        const target = state.inputs[msg.hand].buttons;
+                        Object.assign(target, msg.buttons);
+                    }
+                    // Joystick (Axes) の更新
+                    if (msg.axes && msg.hand) {
+                        state.inputs[msg.hand].axes = msg.axes;
                     }
                 }
             });
 
-            // --- WebXR API Mock Class Definitions ---
-            
+            // WebXR API Mock
             class MockXRSession {
                 constructor() {
                     this.ended = false;
-                    this.inputSources = [
-                        this._createInputSource('left'),
-                        this._createInputSource('right')
-                    ];
-                    this.renderState = { baseLayer: null };
+                    this.inputSources = [ this._createInput('left'), this._createInput('right') ];
                     this.viewerSpace = { name: 'viewer' };
                 }
-
-                _createInputSource(hand) {
+                _createInput(hand) {
                     return {
                         handedness: hand,
                         targetRayMode: 'tracked-pointer',
-                        profiles: ['oculus-touch-v2'],
+                        profiles: ['oculus-touch-v3', 'oculus-touch-v2', 'oculus-touch'],
                         gamepad: {
-                            buttons: [
-                                { pressed: false, value: 0 }, // 0: Trigger
-                                { pressed: false, value: 0 }, // 1: Grip
-                                { pressed: false, value: 0 }, // 2: X/A
-                                { pressed: false, value: 0 }, // 3: Y/B
-                                { pressed: false, value: 0 }, // 4: Menu/Oculus
-                            ],
-                            axes: [0, 0] // 5, 6
+                            buttons: Array(7).fill(0).map(()=>({pressed:false, value:0})),
+                            axes: [0, 0]
                         }
                     };
                 }
-
-                _updateInputSources() {
-                    const mapBtn = (btnState) => ({ pressed: !!btnState, value: btnState ? 1 : 0 });
+                _syncInput(hand, index) {
+                    const src = this.inputSources[index];
+                    const data = state.inputs[hand];
+                    const map = (b) => ({ pressed: !!b, value: b?1:0 });
                     
-                    ['left', 'right'].forEach((hand, index) => {
-                        const input = state.inputs[hand];
-                        const gp = this.inputSources[index].gamepad.buttons;
-                        
-                        // Axes
-                        this.inputSources[index].gamepad.axes = input.axes;
-
-                        // Buttons mapping (簡易的な標準WebXRマッピング)
-                        gp[0] = mapBtn(input.buttons.trigger);
-                        gp[1] = mapBtn(input.buttons.grip);
-                        gp[2] = mapBtn(input.buttons.X || input.buttons.A);
-                        gp[3] = mapBtn(input.buttons.Y || input.buttons.B);
-                        gp[4] = mapBtn(input.buttons.menu);
-                    });
+                    src.gamepad.axes = data.axes;
+                    const btns = src.gamepad.buttons;
+                    // Standard Oculus Mapping
+                    btns[0] = map(data.buttons.trigger); // Trigger
+                    btns[1] = map(data.buttons.grip);    // Grip
+                    btns[3] = map(hand==='left' ? data.buttons.X : data.buttons.A); // Thumbstick Click? or A/X
+                    btns[4] = map(hand==='left' ? data.buttons.Y : data.buttons.B); // B/Y
+                    btns[5] = map(data.buttons.menu);    // Menu
                 }
-
-                requestReferenceSpace(type) { return Promise.resolve(this.viewerSpace); }
+                requestReferenceSpace(t) { return Promise.resolve(this.viewerSpace); }
+                updateRenderState(p) {}
+                end() { this.ended=true; return Promise.resolve(); }
                 
-                getViewerPose(refSpace) {
-                     this._updateInputSources();
-                     const width = window.innerWidth;
-                     const height = window.innerHeight;
-                     
-                     return {
-                        transform: {
-                            position: { x: state.position[0], y: state.position[1], z: state.position[2], w: 1 },
-                            orientation: { x: state.quaternion[0], y: state.quaternion[1], z: state.quaternion[2], w: state.quaternion[3] }
-                        },
-                        views: [{
-                            eye: 'left', // Monoscopic
-                            projectionMatrix: [1.2, 0, 0, 0, 0, 2.4, 0, 0, 0, 0, -1, -1, 0, 0, -0.2, 0],
-                            transform: { position: {x:0,y:0,z:0}, orientation: {x:0,y:0,z:0,w:1} },
-                            viewport: { x: 0, y: 0, width: width, height: height }
-                        }]
-                    };
-                }
-                
-                // --- コントローラーのトラッキングデータを提供する ---
-                getPose(inputSource, refSpace) {
-                    const hand = inputSource.handedness;
-                    const input = state.inputs[hand];
-
-                    return {
-                        transform: {
-                            position: { x: input.position[0], y: input.position[1], z: input.position[2], w: 1 },
-                            orientation: { x: input.quaternion[0], y: input.quaternion[1], z: input.quaternion[2], w: input.quaternion[3] }
-                        },
-                        // WebXR標準の`getPose`の返り値を満たすために、他のダミープロパティも追加
-                        linearVelocity: {x:0, y:0, z:0},
-                        angularVelocity: {x:0, y:0, z:0},
-                        matrix: new Float32Array(16) 
-                    };
-                }
-
-                updateRenderState(params) { 
-                    if(params.baseLayer) this.renderState.baseLayer = params.baseLayer;
-                }
-
-                requestAnimationFrame(callback) {
-                    if (this.ended) return 0;
-                    return window.requestAnimationFrame((t) => {
-                        callback(t, { 
-                            session: this, 
-                            getViewerPose: (refSpace) => this.getViewerPose(refSpace),
-                            getPose: (inputSource, refSpace) => this.getPose(inputSource, refSpace)
+                requestAnimationFrame(cb) {
+                    if(this.ended) return 0;
+                    return window.requestAnimationFrame(t => {
+                        this._syncInput('left', 0);
+                        this._syncInput('right', 1);
+                        cb(t, {
+                            session: this,
+                            getViewerPose: () => ({
+                                transform: {
+                                    position: {x:state.viewer.position[0], y:state.viewer.position[1], z:state.viewer.position[2], w:1},
+                                    orientation: {x:state.viewer.quaternion[0], y:state.viewer.quaternion[1], z:state.viewer.quaternion[2], w:state.viewer.quaternion[3]}
+                                },
+                                views: [{
+                                    eye:'left', projectionMatrix:[1.2,0,0,0, 0,2.4,0,0, 0,0,-1,-1, 0,0,-0.2,0],
+                                    transform:{position:{x:0,y:0,z:0}, orientation:{x:0,y:0,z:0,w:1}},
+                                    viewport:{x:0,y:0, width:window.innerWidth, height:window.innerHeight}
+                                }]
+                            }),
+                            getPose: (src) => {
+                                const d = state.inputs[src.handedness];
+                                return {
+                                    transform: {
+                                        position: {x:d.position[0], y:d.position[1], z:d.position[2], w:1},
+                                        orientation: {x:d.quaternion[0], y:d.quaternion[1], z:d.quaternion[2], w:d.quaternion[3]}
+                                    }
+                                };
+                            }
                         });
                     });
                 }
-                
-                end() { this.ended = true; return Promise.resolve(); }
-                addEventListener() {}
-                removeEventListener() {}
             }
 
             const mockXR = {
-                isSessionSupported: (mode) => Promise.resolve(mode === 'immersive-vr'),
-                requestSession: (mode) => {
-                    if (mode !== 'immersive-vr') return Promise.reject(new Error('Only immersive-vr mode is mocked.'));
-                    return Promise.resolve(new MockXRSession());
-                }
+                isSessionSupported: m => Promise.resolve(m==='immersive-vr'),
+                requestSession: m => Promise.resolve(new MockXRSession())
             };
-
-            try {
-                Object.defineProperty(navigator, 'xr', { value: mockXR, configurable: true, writable: true });
-            } catch(e) {
-                window.navigator.xr = mockXR;
-            }
+            
+            try { Object.defineProperty(navigator, 'xr', { value: mockXR, configurable: true }); }
+            catch(e) { window.navigator.xr = mockXR; }
         })();
-        <\/script>
-        `;
+        <\/script>`;
 
-        // === 2. Editor & System Logic (ホスト/親ウィンドウ) ===
+        // --- 2. ホストアプリケーション ---
+        const app = {
+            dom: {
+                editor: document.getElementById('editor-screen'),
+                emulator: document.getElementById('emulator-screen'),
+                code: document.getElementById('code-area'),
+                frame: document.getElementById('vr-frame'),
+                status: document.getElementById('status-display'),
+                knobL: document.getElementById('knob-left'),
+                knobR: document.getElementById('knob-right'),
+                stick: document.getElementById('joy-stick')
+            },
+            state: {
+                viewer: { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0 },
+                controllers: {
+                    left:  { x: -0.2, y: 1.3, z: -0.4 },
+                    right: { x:  0.2, y: 1.3, z: -0.4 }
+                },
+                loopId: null,
+                gyroAlpha0: null
+            },
 
-        const codeArea = document.getElementById('code-area');
-        const slotSelect = document.getElementById('slot-select');
-        const editorScreen = document.getElementById('editor-screen');
-        const emulatorScreen = document.getElementById('emulator-screen');
-        const vrFrame = document.getElementById('vr-frame');
-        
-        // デフォルトのサンプルコード（Three.js）
-        const DEFAULT_CODE = `<!DOCTYPE html>
+            // --- I/O & Storage ---
+            io: {
+                save: () => {
+                    const s = document.getElementById('slot-select').value;
+                    localStorage.setItem('vr_kit_s'+s, app.dom.code.value);
+                    alert('Saved to Slot '+s);
+                },
+                load: () => {
+                    const s = document.getElementById('slot-select').value;
+                    const v = localStorage.getItem('vr_kit_s'+s);
+                    if(v) app.dom.code.value = v;
+                },
+                copy: async () => { await navigator.clipboard.writeText(app.dom.code.value); alert('Copied'); },
+                paste: async () => { app.dom.code.value = await navigator.clipboard.readText(); },
+                clear: () => { if(confirm('Clear code?')) app.dom.code.value = ''; }
+            },
+
+            // --- System ---
+            system: {
+                init: () => {
+                    app.io.load();
+                    if(!app.dom.code.value) app.dom.code.value = app.sampleCode;
+                    app.controls.init();
+                },
+                run: async () => {
+                    // ジャイロ許可
+                    if(typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                        try { await DeviceOrientationEvent.requestPermission(); } catch(e){}
+                    }
+                    
+                    app.dom.editor.style.display = 'none';
+                    app.dom.emulator.style.display = 'block';
+                    
+                    // Iframe注入
+                    const code = app.dom.code.value.replace('<head>', '<head>' + MOCK_LIB);
+                    app.dom.frame.srcdoc = code;
+
+                    // センサーとループ開始
+                    window.addEventListener('deviceorientation', app.tracking.onGyro);
+                    app.dom.emulator.addEventListener('touchstart', app.tracking.onTouchStart);
+                    app.dom.emulator.addEventListener('touchmove', app.tracking.onTouchMove);
+                    app.dom.emulator.addEventListener('touchend', app.tracking.onTouchEnd);
+                    
+                    app.state.loopId = requestAnimationFrame(app.system.loop);
+                },
+                exit: () => {
+                    app.dom.emulator.style.display = 'none';
+                    app.dom.editor.style.display = 'flex';
+                    app.dom.frame.srcdoc = '';
+                    
+                    window.removeEventListener('deviceorientation', app.tracking.onGyro);
+                    app.dom.emulator.removeEventListener('touchstart', app.tracking.onTouchStart);
+                    app.dom.emulator.removeEventListener('touchmove', app.tracking.onTouchMove);
+                    cancelAnimationFrame(app.state.loopId);
+                    
+                    // Reset
+                    app.state.viewer = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0 };
+                    app.state.gyroAlpha0 = null;
+                },
+                loop: () => {
+                    if(app.dom.emulator.style.display === 'none') return;
+                    
+                    // 計算: Viewer Quaternion
+                    const { yaw, pitch } = app.state.viewer;
+                    const q = app.math.eulerToQuat(yaw, pitch, 0); // Yaw, Pitch, Roll
+                    
+                    // 送信データ構築
+                    const msg = {
+                        type: 'pose',
+                        source: 'VR_HOST',
+                        viewer: {
+                            position: [app.state.viewer.x, app.state.viewer.y, app.state.viewer.z],
+                            quaternion: q
+                        },
+                        left: {
+                            position: [app.state.controllers.left.x, app.state.controllers.left.y, app.state.controllers.left.z]
+                        },
+                        right: {
+                            position: [app.state.controllers.right.x, app.state.controllers.right.y, app.state.controllers.right.z]
+                        }
+                    };
+
+                    if(app.dom.frame.contentWindow) {
+                        app.dom.frame.contentWindow.postMessage(msg, '*');
+                    }
+                    app.state.loopId = requestAnimationFrame(app.system.loop);
+                }
+            },
+
+            // --- Controls & Tracking ---
+            controls: {
+                init: () => {
+                    // Buttons
+                    document.querySelectorAll('.vr-btn').forEach(btn => {
+                        const h = btn.dataset.hand;
+                        const k = btn.dataset.key;
+                        const send = (p) => {
+                            if(app.dom.frame.contentWindow) {
+                                app.dom.frame.contentWindow.postMessage({
+                                    type:'pose', source:'VR_HOST', hand:h, buttons:{[k]:p}
+                                }, '*');
+                            }
+                        };
+                        btn.addEventListener('touchstart', e=>{ e.preventDefault(); e.stopPropagation(); send(true); });
+                        btn.addEventListener('touchend',   e=>{ e.preventDefault(); e.stopPropagation(); send(false); });
+                    });
+                }
+            },
+
+            tracking: {
+                touches: {}, // touchId -> { type, startX, startY, ... }
+                
+                onGyro: (e) => {
+                    if(e.alpha === null) return;
+                    if(app.state.gyroAlpha0 === null) app.state.gyroAlpha0 = e.alpha;
+                    
+                    // 簡易的な向き計算 (実機に合わせて調整が必要な場合あり)
+                    const radA = (e.alpha - app.state.gyroAlpha0) * (Math.PI/180);
+                    const radB = (e.beta - 90) * (Math.PI/180); 
+                    
+                    app.state.viewer.yaw = -radA;
+                    app.state.viewer.pitch = radB;
+                    app.dom.status.innerText = `Gyro Active: ${Math.round(e.alpha)}`;
+                },
+
+                onTouchStart: (e) => {
+                    for(let i=0; i<e.changedTouches.length; i++) {
+                        const t = e.changedTouches[i];
+                        const target = t.target;
+                        
+                        // Zone判定
+                        if(target.closest('#pad-left')) {
+                            app.tracking.touches[t.identifier] = { type:'pad', hand:'left', sx:t.clientX, sy:t.clientY, ix:app.state.controllers.left.x, iz:app.state.controllers.left.z };
+                        } else if(target.closest('#pad-right')) {
+                            app.tracking.touches[t.identifier] = { type:'pad', hand:'right', sx:t.clientX, sy:t.clientY, ix:app.state.controllers.right.x, iz:app.state.controllers.right.z };
+                        } else if(target.closest('#joy-bg')) {
+                             const rect = document.getElementById('joy-bg').getBoundingClientRect();
+                             app.tracking.touches[t.identifier] = { type:'joy', cx:rect.left+rect.width/2, cy:rect.top+rect.height/2 };
+                        } else if(!target.closest('#controls-overlay') && target.id !== 'exit-btn') {
+                            // 画面外＝スワイプ視点移動（Gyroない場合用）
+                            app.tracking.touches[t.identifier] = { type:'swipe', sx:t.clientX, sy:t.clientY };
+                        }
+                    }
+                },
+                
+                onTouchMove: (e) => {
+                    e.preventDefault(); // スクロール防止
+                    for(let i=0; i<e.changedTouches.length; i++) {
+                        const t = e.changedTouches[i];
+                        const data = app.tracking.touches[t.identifier];
+                        if(!data) continue;
+
+                        if(data.type === 'pad') {
+                            const dx = t.clientX - data.sx;
+                            const dy = t.clientY - data.sy;
+                            const scale = 0.003;
+                            // Update State
+                            app.state.controllers[data.hand].x = data.ix + dx * scale;
+                            app.state.controllers[data.hand].z = data.iz + dy * scale; // Y-swipe maps to Z-depth
+                            
+                            // Update UI Knob
+                            const knob = data.hand==='left' ? app.dom.knobL : app.dom.knobR;
+                            const limit = 30; // px
+                            const kx = Math.max(-limit, Math.min(limit, dx));
+                            const ky = Math.max(-limit, Math.min(limit, dy));
+                            knob.style.transform = `translate(calc(-50% + ${kx}px), calc(-50% + ${ky}px))`;
+                        }
+                        else if(data.type === 'joy') {
+                            const maxR = 35;
+                            let dx = t.clientX - data.cx;
+                            let dy = t.clientY - data.cy;
+                            const dist = Math.sqrt(dx*dx+dy*dy);
+                            if(dist > maxR) { dx *= maxR/dist; dy *= maxR/dist; }
+                            
+                            // Update UI
+                            app.dom.stick.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
+                            
+                            // Move Viewer
+                            const ax = dx/maxR; const ay = dy/maxR;
+                            const speed = 0.03;
+                            const yaw = app.state.viewer.yaw;
+                            app.state.viewer.x += (Math.cos(yaw)*ax - Math.sin(yaw)*ay) * speed;
+                            app.state.viewer.z += (Math.sin(yaw)*ax + Math.cos(yaw)*ay) * speed;
+
+                            // Send Axes for compatibility
+                            if(app.dom.frame.contentWindow) {
+                                app.dom.frame.contentWindow.postMessage({
+                                    type:'pose', source:'VR_HOST', hand:'left', axes:[ax, ay]
+                                }, '*');
+                            }
+                        }
+                        else if(data.type === 'swipe') {
+                            // Gyroが使えない時の予備
+                            if(!app.dom.status.innerText.includes('Active')) {
+                                const dx = t.clientX - data.sx;
+                                const dy = t.clientY - data.sy;
+                                app.state.viewer.yaw += dx * 0.005;
+                                app.state.viewer.pitch += dy * 0.005;
+                                data.sx = t.clientX; data.sy = t.clientY;
+                                app.dom.status.innerText = "Swipe Tracking";
+                            }
+                        }
+                    }
+                },
+
+                onTouchEnd: (e) => {
+                    for(let i=0; i<e.changedTouches.length; i++) {
+                        const t = e.changedTouches[i];
+                        const data = app.tracking.touches[t.identifier];
+                        if(data) {
+                            if(data.type === 'joy') {
+                                app.dom.stick.style.transform = `translate(-50%, -50%)`;
+                                // Reset Axes
+                                if(app.dom.frame.contentWindow) {
+                                    app.dom.frame.contentWindow.postMessage({
+                                        type:'pose', source:'VR_HOST', hand:'left', axes:[0,0]
+                                    }, '*');
+                                }
+                            } else if (data.type === 'pad') {
+                                const knob = data.hand==='left' ? app.dom.knobL : app.dom.knobR;
+                                knob.style.transform = `translate(-50%, -50%)`;
+                            }
+                            delete app.tracking.touches[t.identifier];
+                        }
+                    }
+                }
+            },
+
+            math: {
+                eulerToQuat: (y, p, r) => {
+                    const c1=Math.cos(y/2), s1=Math.sin(y/2);
+                    const c2=Math.cos(p/2), s2=Math.sin(p/2);
+                    const c3=Math.cos(r/2), s3=Math.sin(r/2);
+                    return [
+                        c1*s2*c3 + s1*c2*s3, // x
+                        s1*c2*c3 - c1*s2*s3, // y
+                        c1*c2*s3 - s1*s2*c3, // z
+                        c1*c2*c3 + s1*s2*s3  // w
+                    ];
+                }
+            },
+            
+            sampleCode: `<!DOCTYPE html>
 <html>
 <head>
-  <style>body { margin: 0; background: #000; }</style>
+  <style>body{margin:0;background:#000;}</style>
   <script type="module">
     import * as THREE from 'https://unpkg.com/three@0.150.0/build/three.module.js';
 
-    // シーン設定
+    // 1. Setup Scene
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x202020);
-    const camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+    scene.background = new THREE.Color(0x333333);
+    // Grid
+    scene.add(new THREE.GridHelper(10, 10));
+
+    const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 100);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.xr.enabled = true; 
+    renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
     
-    // コントローラー用のジオメトリ
-    const controllerGeometry = new THREE.CylinderGeometry(0.02, 0.04, 0.2, 8);
-    const controllerMaterial = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-    const controller1 = new THREE.Mesh(controllerGeometry, controllerMaterial);
-    const controller2 = new THREE.Mesh(controllerGeometry.clone(), controllerMaterial.clone());
-    scene.add(controller1, controller2);
+    // Light
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(0, 5, 5);
+    scene.add(light);
+    scene.add(new THREE.AmbientLight(0x404040));
 
-    // オブジェクト作成 (HMD基準)
-    const geometry = new THREE.BoxGeometry(0.2, 0.2, 0.2);
-    const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, wireframe: true });
-    const cube = new THREE.Mesh(geometry, material);
-    cube.position.set(0, 1.6, -1);
-    scene.add(cube);
+    // 2. Controller Meshes
+    const cGeo = new THREE.BoxGeometry(0.1, 0.1, 0.2);
+    const cMatL = new THREE.MeshLambertMaterial({ color: 0xff0000 }); // Red = Left
+    const cMatR = new THREE.MeshLambertMaterial({ color: 0x0000ff }); // Blue = Right
     
-    const light = new THREE.HemisphereLight( 0xffffff, 0xbbbbff, 1 );
-    scene.add( light );
-    
-    // アニメーションループ
-    renderer.setAnimationLoop((time, frame) => {
-        if (frame) {
-            // コントローラー位置の取得
-            const session = renderer.xr.getSession();
-            if (session && session.inputSources.length >= 2) {
-                const referenceSpace = renderer.xr.getReferenceSpace();
+    const cLeft = new THREE.Mesh(cGeo, cMatL);
+    const cRight = new THREE.Mesh(cGeo, cMatR);
+    scene.add(cLeft, cRight);
 
-                // 左手
-                let poseL = frame.getPose(session.inputSources[0], referenceSpace);
-                if (poseL) {
-                    controller1.position.set(poseL.transform.position.x, poseL.transform.position.y, poseL.transform.position.z);
-                    controller1.quaternion.set(poseL.transform.orientation.x, poseL.transform.orientation.y, poseL.transform.orientation.z, poseL.transform.orientation.w);
-                    controller1.material.color.set(session.inputSources[0].gamepad.buttons[0].pressed ? 0x00ff00 : 0xff0000);
-                }
+    // 3. Loop
+    renderer.setAnimationLoop((t, frame) => {
+        if(!frame) { renderer.render(scene, camera); return; }
 
-                // 右手
-                let poseR = frame.getPose(session.inputSources[1], referenceSpace);
-                if (poseR) {
-                    controller2.position.set(poseR.transform.position.x, poseR.transform.position.y, poseR.transform.position.z);
-                    controller2.quaternion.set(poseR.transform.orientation.x, poseR.transform.orientation.y, poseR.transform.orientation.z, poseR.transform.orientation.w);
-                    controller2.material.color.set(session.inputSources[1].gamepad.buttons[0].pressed ? 0x00ff00 : 0xff0000);
-                }
+        const session = renderer.xr.getSession();
+        const refSpace = renderer.xr.getReferenceSpace();
+        
+        // Update Controller Visuals
+        session.inputSources.forEach(src => {
+            const pose = frame.getPose(src, refSpace);
+            if(pose) {
+                const mesh = src.handedness === 'left' ? cLeft : cRight;
+                mesh.position.copy(pose.transform.position);
+                mesh.quaternion.copy(pose.transform.orientation);
+                
+                // Button Feedback (Size Change)
+                if(src.gamepad.buttons[0].pressed) mesh.scale.set(1.5,1.5,1.5);
+                else mesh.scale.set(1,1,1);
             }
-        }
+        });
 
-        // カメラがHMDの位置と姿勢に追従
         renderer.render(scene, camera);
     });
 
-    const startVR = async () => {
-      if (navigator.xr) {
-        try {
-          const session = await navigator.xr.requestSession('immersive-vr');
-          renderer.xr.setSession(session);
-        } catch (e) { console.error("XR Start failed", e); }
-      }
+    // 4. Auto Start
+    const start = async () => {
+        if(navigator.xr) {
+            try {
+                const session = await navigator.xr.requestSession('immersive-vr');
+                renderer.xr.setSession(session);
+            } catch(e) { console.error(e); }
+        }
     };
-    setTimeout(startVR, 100); 
-
+    setTimeout(start, 500);
   <\/script>
 </head>
 <body></body>
-</html>`;
-
-        // --- LocalStorage/Clipboard Functions (省略) ---
-        window.onload = () => {
-            loadSlot();
-            if(!codeArea.value) codeArea.value = DEFAULT_CODE;
+</html>`
         };
 
-        function saveSlot() {
-            const slot = slotSelect.value;
-            localStorage.setItem(`vr_emu_slot_${slot}`, codeArea.value);
-            alert(`Slot ${slot} に保存しました`);
-        }
-
-        function loadSlot() {
-            const slot = slotSelect.value;
-            const data = localStorage.getItem(`vr_emu_slot_${slot}`);
-            if (data) codeArea.value = data;
-        }
-
-        function clearCode() {
-            if(confirm('エディタをクリアしますか？')) codeArea.value = '';
-        }
-
-        async function copyCode() {
-            try {
-                await navigator.clipboard.writeText(codeArea.value);
-                alert('コピーしました');
-            } catch (err) { alert('コピー失敗: ' + err); }
-        }
-
-        async function pasteCode() {
-            try {
-                const text = await navigator.clipboard.readText();
-                codeArea.value = text;
-            } catch (err) { alert('ペースト失敗: ' + err); }
-        }
-        
-        // --- Run & Emulator Logic ---
-
-        // HMD Pose
-        let pose = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0 };
-        // Controller Pose (位置 X, Y, Z)
-        let controllerPose = {
-            left: { x: -0.3, y: 1.4, z: -0.5, qx: 0, qy: 0, qz: 0, qw: 1 },
-            right: { x: 0.3, y: 1.4, z: -0.5, qx: 0, qy: 0, qz: 0, qw: 1 }
-        };
-
-        let initialGyroAlpha = null;
-        let animationFrameId;
-
-        const postMessageToIframe = (message) => {
-            if (vrFrame.contentWindow) {
-                vrFrame.contentWindow.postMessage(Object.assign(message, { source: 'VR_HOST' }), '*');
-            }
-        };
-
-        async function runVR() {
-            let gyroGranted = true;
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                try {
-                    const state = await DeviceOrientationEvent.requestPermission();
-                    if (state !== 'granted') gyroGranted = false;
-                } catch(e) { gyroGranted = false; }
-            }
-            startEmulator(gyroGranted);
-        }
-
-        function startEmulator(gyroGranted) {
-            editorScreen.style.display = 'none';
-            emulatorScreen.style.display = 'block';
-            
-            const userCode = codeArea.value;
-            const finalHtml = userCode.replace('<head>', '<head>' + MOCK_LIB_CODE);
-            
-            vrFrame.srcdoc = finalHtml;
-
-            if (gyroGranted) {
-                window.addEventListener('deviceorientation', handleOrientation);
-                document.getElementById('gyro-status').textContent = 'Gyro: ON (Active)';
-            } else {
-                document.getElementById('gyro-status').textContent = 'Gyro: OFF (Touch Tracking)';
-            }
-
-            startLoop();
-        }
-
-        function exitVR() {
-            emulatorScreen.style.display = 'none';
-            editorScreen.style.display = 'flex';
-            vrFrame.srcdoc = '';
-            window.removeEventListener('deviceorientation', handleOrientation);
-            if (animationFrameId) cancelAnimationFrame(animationFrameId);
-            
-            pose = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0 }; 
-            controllerPose = {
-                left: { x: -0.3, y: 1.4, z: -0.5, qx: 0, qy: 0, qz: 0, qw: 1 },
-                right: { x: 0.3, y: 1.4, z: -0.5, qx: 0, qy: 0, qz: 0, qw: 1 }
-            };
-            initialGyroAlpha = null;
-        }
-
-        // --- Orientation & Tracking (HMD) ---
-
-        function handleOrientation(e) {
-            if(!initialGyroAlpha && e.alpha !== null) initialGyroAlpha = e.alpha;
-            
-            if(e.alpha !== null) {
-                const radA = (e.alpha - initialGyroAlpha) * (Math.PI / 180);
-                const radB = (e.beta !== null ? e.beta - 90 : 0) * (Math.PI / 180);
-                pose.yaw = -radA; 
-                pose.pitch = radB;
-            }
-        }
-        
-        let startX, startY, touchDrag;
-        const ROTATION_FACTOR = 0.005; 
-        
-        emulatorScreen.addEventListener('touchstart', (e) => {
-            if (e.target.closest('#controls-overlay')) return; 
-            touchDrag = true;
-            startX = e.touches[0].clientX;
-            startY = e.touches[0].clientY;
-            e.preventDefault();
-        });
-
-        emulatorScreen.addEventListener('touchmove', (e) => {
-            if(!touchDrag || e.target.closest('#controls-overlay')) return;
-            e.preventDefault();
-            
-            if(document.getElementById('gyro-status').textContent.includes('Touch Tracking')) {
-                const touch = e.touches[0];
-                const deltaX = touch.clientX - startX;
-                const deltaY = touch.clientY - startY;
-
-                pose.yaw += deltaX * ROTATION_FACTOR;
-                pose.pitch += deltaY * ROTATION_FACTOR;
-                pose.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pose.pitch));
-
-                startX = touch.clientX;
-                startY = touch.clientY;
-            }
-        });
-        emulatorScreen.addEventListener('touchend', () => { touchDrag = false; });
-
-
-        // --- Input Handling (Joystick & Buttons) ---
-        
-        const joyZone = document.getElementById('joystick-area');
-        const joyKnob = document.getElementById('joystick-knob');
-        let joyDrag = false;
-        let joyCenter = {x:0, y:0};
-        
-        // Joystick (HMD Movement)
-        joyZone.addEventListener('touchstart', e => {
-            joyDrag = true;
-            const rect = joyZone.getBoundingClientRect();
-            joyCenter = { x: rect.left + rect.width/2, y: rect.top + rect.height/2 };
-        }, {passive: false});
-
-        joyZone.addEventListener('touchmove', e => {
-            if(!joyDrag) return;
-            e.preventDefault();
-            const t = e.touches[0];
-            const maxR = 35;
-            let dx = t.clientX - joyCenter.x;
-            let dy = t.clientY - joyCenter.y;
-            const dist = Math.sqrt(dx*dx + dy*dy);
-            
-            if(dist > maxR) { dx = dx * (maxR/dist); dy = dy * (maxR/dist); }
-            
-            joyKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
-            
-            const ax = dx / maxR;
-            const ay = dy / maxR;
-            
-            const speed = 0.05;
-            const forward = -ay * speed;
-            const sideways = ax * speed; 
-            
-            pose.x += Math.sin(pose.yaw) * forward + Math.cos(pose.yaw) * sideways;
-            pose.z += Math.cos(pose.yaw) * forward - Math.sin(pose.yaw) * sideways;
-
-            postMessageToIframe({ type: 'updateInput', hand: 'left', axes: [ax, ay] });
-        }, {passive: false});
-
-        const resetJoy = () => {
-            joyDrag = false;
-            joyKnob.style.transform = `translate(-50%, -50%)`;
-            postMessageToIframe({ type: 'updateInput', hand: 'left', axes: [0, 0] });
-        };
-        joyZone.addEventListener('touchend', resetJoy);
-        joyZone.addEventListener('touchcancel', resetJoy);
-
-        // Buttons
-        document.querySelectorAll('.v-btn').forEach(btn => {
-            const key = btn.dataset.key;
-            const hand = btn.dataset.hand;
-
-            const send = (pressed) => {
-                const msg = { type: 'updateInput', hand: hand, buttons: {} };
-                msg.buttons[key] = pressed;
-                postMessageToIframe(msg);
-            };
-            btn.addEventListener('touchstart', (e) => { e.preventDefault(); send(true); });
-            btn.addEventListener('touchend', (e) => { e.preventDefault(); send(false); });
-        });
-
-        // --- Controller Tracking Pads ---
-        
-        const TRACK_SCALE = 0.005; // トラッキング感度
-
-        function setupTrackingPad(padId, hand) {
-            const pad = document.getElementById(padId);
-            let isTracking = false;
-            let startClientX, startClientY;
-            let startX, startY;
-
-            pad.addEventListener('touchstart', e => {
-                isTracking = true;
-                e.preventDefault();
-                startClientX = e.touches[0].clientX;
-                startClientY = e.touches[0].clientY;
-                startX = controllerPose[hand].x;
-                startY = controllerPose[hand].y;
-            }, {passive: false});
-
-            pad.addEventListener('touchmove', e => {
-                if(!isTracking) return;
-                e.preventDefault();
-                const touch = e.touches[0];
-                const dx = touch.clientX - startClientX;
-                const dy = touch.clientY - startClientY;
-                
-                // X座標 (左右) と Z座標 (前後) を操作 (Yは高さ固定)
-                controllerPose[hand].x = startX + dx * TRACK_SCALE;
-                controllerPose[hand].z = controllerPose[hand].z + dy * TRACK_SCALE; // YタッチはZ移動へ
-                
-                // コントローラーの姿勢はここでは回転しない（固定）
-            }, {passive: false});
-
-            const stopTracking = () => {
-                isTracking = false;
-            };
-            pad.addEventListener('touchend', stopTracking);
-            pad.addEventListener('touchcancel', stopTracking);
-        }
-
-        setupTrackingPad('left-tracking-pad', 'left');
-        setupTrackingPad('right-tracking-pad', 'right');
-
-        // --- Main Loop (Pose Data Transmission) ---
-
-        function startLoop() {
-            function loop() {
-                if(emulatorScreen.style.display === 'none') return;
-
-                // HMD Pose (Euler to Quaternion)
-                const c1 = Math.cos(pose.yaw / 2); const s1 = Math.sin(pose.yaw / 2);
-                const c2 = Math.cos(pose.pitch / 2); const s2 = Math.sin(pose.pitch / 2);
-                const c3 = Math.cos(0); const s3 = Math.sin(0);
-                const qw = c1 * c2 * c3 + s1 * s2 * s3; 
-                const qx = c1 * s2 * c3 + s1 * c2 * s3; 
-                const qy = s1 * c2 * c3 - c1 * s2 * s3; 
-                const qz = c1 * c2 * s3 - s1 * s2 * c3; 
-
-                postMessageToIframe({
-                    type: 'updatePose',
-                    position: [pose.x, pose.y, pose.z],
-                    quaternion: [qx, qy, qz, qw],
-                    // コントローラーのトラッキングデータを追加
-                    handPose: {
-                        hand: 'left',
-                        position: [controllerPose.left.x, controllerPose.left.y, controllerPose.left.z],
-                        quaternion: [controllerPose.left.qx, controllerPose.left.qy, controllerPose.left.qz, controllerPose.left.qw]
-                    }
-                });
-                
-                postMessageToIframe({
-                    type: 'updatePose',
-                    handPose: {
-                        hand: 'right',
-                        position: [controllerPose.right.x, controllerPose.right.y, controllerPose.right.z],
-                        quaternion: [controllerPose.right.qx, controllerPose.right.qy, controllerPose.right.qz, controllerPose.right.qw]
-                    }
-                });
-
-                animationFrameId = requestAnimationFrame(loop);
-            }
-            loop();
-        }
-
+        window.onload = app.system.init;
     </script>
 </body>
 </html>
