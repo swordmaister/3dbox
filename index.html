@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-<title>Meta Quest 2 WebXR Emulator</title>
+<title>Meta Quest 2 WebXR Emulator (Fixed)</title>
 <style>
     /* --- 全体スタイル --- */
     :root {
@@ -301,7 +301,23 @@
                     this.ended = false;
                     this.inputSources = [ this._createInput('left'), this._createInput('right') ];
                     this.viewerSpace = { name: 'viewer' };
+                    this.listeners = {}; // イベントリスナー格納用
                 }
+                
+                // addEventListener/removeEventListener の追加実装
+                addEventListener(type, callback) {
+                    if (!this.listeners[type]) this.listeners[type] = [];
+                    this.listeners[type].push(callback);
+                }
+                removeEventListener(type, callback) {
+                    if (!this.listeners[type]) return;
+                    this.listeners[type] = this.listeners[type].filter(cb => cb !== callback);
+                }
+                dispatchEvent(event) {
+                    const list = this.listeners[event.type];
+                    if (list) list.forEach(cb => cb(event));
+                }
+
                 _createInput(hand) {
                     return {
                         handedness: hand,
@@ -329,7 +345,13 @@
                 }
                 requestReferenceSpace(t) { return Promise.resolve(this.viewerSpace); }
                 updateRenderState(p) {}
-                end() { this.ended=true; return Promise.resolve(); }
+                
+                end() { 
+                    this.ended = true;
+                    // endイベントを実際に発火させる
+                    this.dispatchEvent({ type: 'end', session: this });
+                    return Promise.resolve(); 
+                }
                 
                 requestAnimationFrame(cb) {
                     if(this.ended) return 0;
@@ -700,6 +722,7 @@
         if(navigator.xr) {
             try {
                 const session = await navigator.xr.requestSession('immersive-vr');
+                session.addEventListener('end', () => console.log('Session Ended'));
                 renderer.xr.setSession(session);
             } catch(e) { console.error(e); }
         }
