@@ -12,7 +12,6 @@
         --text-color: #e0e0e0;
         --accent-color: #007acc;
         --danger-color: #d9534f;
-        --ui-overlay-bg: rgba(0, 0, 0, 0.6);
     }
     body {
         margin: 0; padding: 0;
@@ -127,12 +126,12 @@
         align-items: flex-end;
         padding: 20px;
         box-sizing: border-box;
-        pointer-events: none; /* 下のcanvasへのタッチを阻害しないように */
+        /* pointer-events: none; は不要。UI操作はオーバーレイが受け持つ */
     }
 
     /* コントローラーパーツ */
     .control-zone {
-        pointer-events: auto; /* ボタン部分はタッチ有効 */
+        pointer-events: auto;
         background: rgba(50, 50, 50, 0.5);
         border-radius: 20px;
         padding: 10px;
@@ -234,7 +233,7 @@
 
     <script>
         // === 1. WebXR Mock Library (Iframe内に注入されるコード) ===
-        // 文字列として定義し、実行時にiframeのheadに書き込みます
+        // Iframe内で実行されることで、親ウィンドウのコードとの競合を防ぎます。
         const MOCK_LIB_CODE = `
         <script>
         (function() {
@@ -250,13 +249,13 @@
                 }
             };
 
-            // 親ウィンドウからのメッセージ受信
+            // 親ウィンドウからのメッセージ受信リスナー
             window.addEventListener('message', (e) => {
                 const msg = e.data;
-                if (!msg || !msg.type) return;
+                // メッセージがこのエミュレーター用か確認
+                if (!msg || !msg.type || msg.source !== 'VR_HOST') return; 
 
                 if (msg.type === 'updateInput') {
-                    // コントローラー入力の更新
                     if(msg.hand === 'left') {
                         if(msg.axes) state.inputs.left.axes = msg.axes;
                     }
@@ -265,7 +264,6 @@
                     }
                 }
                 else if (msg.type === 'updatePose') {
-                    // ジャイロ/移動による姿勢更新
                     if(msg.position) state.position = msg.position;
                     if(msg.quaternion) state.quaternion = msg.quaternion;
                 }
@@ -304,14 +302,12 @@
                 }
 
                 _updateInputSources() {
-                    // 内部stateをgamepadオブジェクトに反映
                     const mapBtn = (btnState) => ({ pressed: !!btnState, value: btnState ? 1 : 0 });
                     
-                    // Left (Joystick)
+                    // Left (Joystick for movement)
                     this.inputSources[0].gamepad.axes = state.inputs.left.axes;
                     
                     // Right (Buttons)
-                    // Index: 0:Trig, 1:Grip, 4:A, 5:B (Standard Mapping概略)
                     const rBtns = state.inputs.right.buttons;
                     const gp = this.inputSources[1].gamepad.buttons;
                     gp[0] = mapBtn(rBtns.trigger);
@@ -321,26 +317,42 @@
                 }
 
                 requestReferenceSpace(type) {
-                    return Promise.resolve({
-                        getViewerPose: (refSpace) => {
-                            this._updateInputSources();
-                            return {
-                                transform: {
-                                    position: { x: state.position[0], y: state.position[1], z: state.position[2], w: 1 },
-                                    orientation: { x: state.quaternion[0], y: state.quaternion[1], z: state.quaternion[2], w: state.quaternion[3] },
-                                    matrix: new Float32Array(16) // Matrix計算は省略（多くのエンジンはtransformを使う）
-                                },
-                                views: [{
-                                    eye: 'left', // Monoscopic for mobile
-                                    projectionMatrix: [1.2, 0, 0, 0, 0, 2.4, 0, 0, 0, 0, -1, -1, 0, 0, -0.2, 0], // Dummy Projection
-                                    transform: { position: {x:0,y:0,z:0}, orientation: {x:0,y:0,z:0,w:1} },
-                                    viewport: { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }
-                                }]
-                            };
-                        }
-                    });
+                    // XRSessionを返す
+                    return Promise.resolve(this.viewerSpace);
                 }
                 
+                getViewerPose(refSpace) {
+                     this._updateInputSources();
+                     
+                     // Iframeのサイズをビューポートとして利用
+                     const width = window.innerWidth;
+                     const height = window.innerHeight;
+                     
+                     return {
+                        transform: {
+                            // 姿勢
+                            position: { x: state.position[0], y: state.position[1], z: state.position[2], w: 1 },
+                            orientation: { x: state.quaternion[0], y: state.quaternion[1], z: state.quaternion[2], w: state.quaternion[3] }
+                        },
+                        views: [{
+                            eye: 'left', // Monoscopic
+                            projectionMatrix: [1.2, 0, 0, 0, 0, 2.4, 0, 0, 0, 0, -1, -1, 0, 0, -0.2, 0], // Dummy Projection
+                            transform: { position: {x:0,y:0,z:0}, orientation: {x:0,y:0,z:0,w:1} },
+                            viewport: { x: 0, y: 0, width: width, height: height }
+                        }]
+                    };
+                }
+                
+                getPose(inputSource, refSpace) {
+                    // コントローラーの位置は常に固定 (HMDを基準)
+                    return {
+                        transform: {
+                            position: { x: inputSource.handedness === 'left' ? -0.2 : 0.2, y: 1.4, z: -0.5, w: 1 },
+                            orientation: { x: 0, y: 0, z: 0, w: 1 }
+                        }
+                    };
+                }
+
                 updateRenderState(params) { 
                     if(params.baseLayer) this.renderState.baseLayer = params.baseLayer;
                 }
@@ -348,7 +360,11 @@
                 requestAnimationFrame(callback) {
                     if (this.ended) return 0;
                     return window.requestAnimationFrame((t) => {
-                        callback(t, this);
+                        callback(t, { 
+                            session: this, 
+                            getViewerPose: (refSpace) => this.getViewerPose(refSpace),
+                            getPose: (inputSource, refSpace) => this.getPose(inputSource, refSpace)
+                        });
                     });
                 }
                 
@@ -361,16 +377,15 @@
             const mockXR = {
                 isSessionSupported: (mode) => Promise.resolve(mode === 'immersive-vr'),
                 requestSession: (mode) => {
-                    console.log("Session Requested: " + mode);
+                    if (mode !== 'immersive-vr') return Promise.reject(new Error('Only immersive-vr mode is mocked.'));
                     return Promise.resolve(new MockXRSession());
                 }
             };
 
-            // navigator.xr を上書き (configurableがtrueの場合のみ)
+            // window.navigator.xr を上書き
             try {
-                Object.defineProperty(navigator, 'xr', { value: mockXR, configurable: true });
+                Object.defineProperty(navigator, 'xr', { value: mockXR, configurable: true, writable: true });
             } catch(e) {
-                console.warn("Could not override navigator.xr directly, injecting to window.");
                 window.navigator.xr = mockXR;
             }
             
@@ -378,7 +393,7 @@
         <\/script>
         `;
 
-        // === 2. Editor & System Logic ===
+        // === 2. Editor & System Logic (ホスト/親ウィンドウ) ===
 
         const codeArea = document.getElementById('code-area');
         const slotSelect = document.getElementById('slot-select');
@@ -422,7 +437,6 @@
     });
 
     // VRセッション自動開始 (エミュレーター用)
-    // 通常はボタンクリックが必要だが、この環境では自動でリクエストする
     const startVR = async () => {
       if (navigator.xr) {
         try {
@@ -431,16 +445,17 @@
         } catch (e) { console.error("XR Start failed", e); }
       }
     };
-    setTimeout(startVR, 1000);
+    // 描画が安定してからセッションをリクエスト
+    setTimeout(startVR, 100); 
 
   <\/script>
 </head>
 <body></body>
 </html>`;
 
-        // 初期化
+        // --- LocalStorage/Clipboard Functions ---
         window.onload = () => {
-            loadSlot(); // スロット1をロード、なければデフォルト
+            loadSlot();
             if(!codeArea.value) codeArea.value = DEFAULT_CODE;
         };
 
@@ -453,11 +468,7 @@
         function loadSlot() {
             const slot = slotSelect.value;
             const data = localStorage.getItem(`vr_emu_slot_${slot}`);
-            if (data) {
-                codeArea.value = data;
-            } else {
-                // alert(`Slot ${slot} は空です`);
-            }
+            if (data) codeArea.value = data;
         }
 
         function clearCode() {
@@ -477,55 +488,121 @@
                 codeArea.value = text;
             } catch (err) { alert('ペースト失敗: ' + err); }
         }
-
-        // === 3. Run & Emulator Logic ===
         
-        // 姿勢管理変数
-        let pose = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0 };
-        let isGyroActive = false;
-        let initialGyroAlpha = null;
+        // --- Run & Emulator Logic ---
 
-        function runVR() {
-            // ジャイロセンサーの許可リクエスト (iOS)
-            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-                DeviceOrientationEvent.requestPermission()
-                    .then(state => {
-                        if (state === 'granted') startEmulator();
-                        else alert('ジャイロ許可が必要です');
-                    })
-                    .catch(e => {
-                        alert('ジャイロエラー: ' + e);
-                        startEmulator(); // 失敗してもとりあえず起動
-                    });
-            } else {
-                startEmulator();
+        let pose = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0 };
+        let initialGyroAlpha = null;
+        let animationFrameId;
+
+        // Iframeへメッセージを送信するヘルパー関数
+        const postMessageToIframe = (message) => {
+            if (vrFrame.contentWindow) {
+                // Iframe内のコードが識別できるように 'VR_HOST' を送信元として追加
+                vrFrame.contentWindow.postMessage(Object.assign(message, { source: 'VR_HOST' }), '*');
             }
+        };
+
+        async function runVR() {
+            // ジャイロセンサーの許可リクエスト
+            let gyroGranted = true;
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                try {
+                    const state = await DeviceOrientationEvent.requestPermission();
+                    if (state !== 'granted') gyroGranted = false;
+                } catch(e) {
+                    console.error("Gyro Permission Error:", e);
+                    gyroGranted = false;
+                }
+            }
+            
+            startEmulator(gyroGranted);
         }
 
-        function startEmulator() {
+        function startEmulator(gyroGranted) {
             // UI切り替え
             editorScreen.style.display = 'none';
             emulatorScreen.style.display = 'block';
             
-            // Iframe生成（モック注入 + ユーザーコード）
+            // Iframe生成（WebXR Mock + ユーザーコード）
+            // Iframe内でWebXRのモックが先に実行されるように、<head>タグの直後に注入
             const userCode = codeArea.value;
             const finalHtml = userCode.replace('<head>', '<head>' + MOCK_LIB_CODE);
             
             vrFrame.srcdoc = finalHtml;
 
-            // センサー開始
-            window.addEventListener('deviceorientation', handleOrientation);
+            if (gyroGranted) {
+                window.addEventListener('deviceorientation', handleOrientation);
+                document.getElementById('gyro-status').textContent = 'Gyro: ON (Active)';
+            } else {
+                document.getElementById('gyro-status').textContent = 'Gyro: OFF (Touch Tracking)';
+            }
+
+            // ループ開始
             startLoop();
         }
 
         function exitVR() {
             emulatorScreen.style.display = 'none';
             editorScreen.style.display = 'flex';
-            vrFrame.srcdoc = ''; // Reset
+            vrFrame.srcdoc = ''; // Reset iframe content
             window.removeEventListener('deviceorientation', handleOrientation);
-            cancelAnimationFrame(animationFrameId);
-            pose = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0 }; // Reset pose
+            if (animationFrameId) cancelAnimationFrame(animationFrameId);
+            
+            // Pose Reset
+            pose = { x: 0, y: 1.6, z: 0, yaw: 0, pitch: 0 }; 
+            initialGyroAlpha = null;
         }
+
+        // --- Orientation & Tracking ---
+
+        function handleOrientation(e) {
+            if(!initialGyroAlpha && e.alpha !== null) initialGyroAlpha = e.alpha;
+            
+            if(e.alpha !== null) {
+                // Alpha (Z軸/Yaw) の初期値からの変化を計算
+                const radA = (e.alpha - initialGyroAlpha) * (Math.PI / 180);
+                // Beta (X軸/Pitch) - 90度を補正して、デバイス縦持ちを基準にする
+                const radB = (e.beta !== null ? e.beta - 90 : 0) * (Math.PI / 180);
+                
+                pose.yaw = -radA; // 左回転でYaw+になるように調整
+                pose.pitch = radB;
+            }
+        }
+        
+        // Touch Tracking (ジャイロがOFFの時の代替)
+        let startX, startY, touchDrag;
+        const ROTATION_FACTOR = 0.005; // 感度調整
+        
+        emulatorScreen.addEventListener('touchstart', (e) => {
+            // コントロールUI外でのタッチのみ反応
+            if (e.target.closest('#controls-overlay')) return; 
+            touchDrag = true;
+            startX = e.touches[0].clientX;
+            startY = e.touches[0].clientY;
+            e.preventDefault();
+        });
+
+        emulatorScreen.addEventListener('touchmove', (e) => {
+            if(!touchDrag || e.target.closest('#controls-overlay')) return;
+            e.preventDefault();
+            
+            if(document.getElementById('gyro-status').textContent.includes('Touch Tracking')) {
+                const touch = e.touches[0];
+                const deltaX = touch.clientX - startX;
+                const deltaY = touch.clientY - startY;
+
+                // YawとPitchを更新
+                pose.yaw += deltaX * ROTATION_FACTOR;
+                pose.pitch += deltaY * ROTATION_FACTOR;
+                pose.pitch = Math.max(-Math.PI / 2, Math.min(Math.PI / 2, pose.pitch)); // 90度以上回らないようにクランプ
+
+                startX = touch.clientX;
+                startY = touch.clientY;
+            }
+        });
+        emulatorScreen.addEventListener('touchend', () => { touchDrag = false; });
+
 
         // --- Input Handling (Joystick & Buttons) ---
         
@@ -557,26 +634,26 @@
             
             joyKnob.style.transform = `translate(calc(-50% + ${dx}px), calc(-50% + ${dy}px))`;
             
-            // Send Axes to Iframe
-            // WebXR axes: x(-1 left, 1 right), y(-1 up, 1 down)
-            const ax = dx / maxR;
-            const ay = dy / maxR;
+            const ax = dx / maxR; // X軸 (-1 to 1)
+            const ay = dy / maxR; // Y軸 (-1 to 1)
             
-            // Move Player (Simple implementation)
+            // 移動 (現在のYawに基づいて移動方向を計算)
             const speed = 0.05;
-            pose.x += (Math.cos(pose.yaw) * ax - Math.sin(pose.yaw) * ay) * speed;
-            pose.z += (Math.sin(pose.yaw) * ax + Math.cos(pose.yaw) * ay) * speed;
+            const forward = -ay * speed; // Y軸マイナスが前進
+            const sideways = ax * speed; 
+            
+            // Z軸(前後)とX軸(左右)の移動量を合成
+            pose.x += Math.sin(pose.yaw) * forward + Math.cos(pose.yaw) * sideways;
+            pose.z += Math.cos(pose.yaw) * forward - Math.sin(pose.yaw) * sideways;
 
-            vrFrame.contentWindow.postMessage({
-                type: 'updateInput', hand: 'left', axes: [ax, ay]
-            }, '*');
+            postMessageToIframe({ type: 'updateInput', hand: 'left', axes: [ax, ay] });
             
         }, {passive: false});
 
         const resetJoy = () => {
             joyDrag = false;
             joyKnob.style.transform = `translate(-50%, -50%)`;
-            vrFrame.contentWindow.postMessage({ type: 'updateInput', hand: 'left', axes: [0, 0] }, '*');
+            postMessageToIframe({ type: 'updateInput', hand: 'left', axes: [0, 0] });
         };
         joyZone.addEventListener('touchend', resetJoy);
         joyZone.addEventListener('touchcancel', resetJoy);
@@ -587,55 +664,37 @@
             const send = (pressed) => {
                 const msg = { type: 'updateInput', hand: 'right', buttons: {} };
                 msg.buttons[key] = pressed;
-                vrFrame.contentWindow.postMessage(msg, '*');
+                postMessageToIframe(msg);
             };
             btn.addEventListener('touchstart', (e) => { e.preventDefault(); send(true); });
             btn.addEventListener('touchend', (e) => { e.preventDefault(); send(false); });
         });
 
-        // --- Orientation & Main Loop ---
+        // --- Main Loop (Pose Data Transmission) ---
 
-        function handleOrientation(e) {
-            if(!initialGyroAlpha && e.alpha) initialGyroAlpha = e.alpha;
-            
-            // 簡易的な計算 (Y軸回転=Alpha, X軸回転=Beta)
-            // 実際はQuaternion変換が必要だが、簡易エミュレーションのためEulerを使用
-            if(e.alpha !== null) {
-                const radA = (e.alpha - initialGyroAlpha) * (Math.PI / 180);
-                const radB = (e.beta - 90) * (Math.PI / 180); // スマホを縦に持った状態を基準にする補正
-                
-                // 実際はScreenOrientation APIなども考慮が必要だがここではシンプルに
-                pose.yaw = -radA; // Alphaは反時計回り
-                pose.pitch = radB;
-                
-                document.getElementById('gyro-status').textContent = `Gyro: ${Math.round(e.alpha)}, ${Math.round(e.beta)}`;
-            }
-        }
-
-        let animationFrameId;
         function startLoop() {
-            // Iframeに現在のPoseを送り続けるループ
             function loop() {
                 if(emulatorScreen.style.display === 'none') return;
 
-                // Euler to Quaternion (簡易)
+                // Euler to Quaternion (Yaw-Pitch-Roll)
                 const c1 = Math.cos(pose.yaw / 2);
                 const s1 = Math.sin(pose.yaw / 2);
                 const c2 = Math.cos(pose.pitch / 2);
                 const s2 = Math.sin(pose.pitch / 2);
-                const c3 = Math.cos(0);
+                const c3 = Math.cos(0); // Rollは0固定
                 const s3 = Math.sin(0);
 
-                const qx = s1 * s2 * c3 + c1 * c2 * s3;
-                const qy = s1 * c2 * c3 + c1 * s2 * s3;
-                const qz = c1 * s2 * c3 - s1 * c2 * s3;
-                const qw = c1 * c2 * c3 - s1 * s2 * s3;
+                // ZYX order (Y, P, R -> Q)
+                const qw = c1 * c2 * c3 + s1 * s2 * s3; // w
+                const qx = c1 * s2 * c3 + s1 * c2 * s3; // x
+                const qy = s1 * c2 * c3 - c1 * s2 * s3; // y
+                const qz = c1 * c2 * s3 - s1 * s2 * c3; // z
 
-                vrFrame.contentWindow.postMessage({
+                postMessageToIframe({
                     type: 'updatePose',
                     position: [pose.x, pose.y, pose.z],
                     quaternion: [qx, qy, qz, qw]
-                }, '*');
+                });
 
                 animationFrameId = requestAnimationFrame(loop);
             }
