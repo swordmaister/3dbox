@@ -3,11 +3,11 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
-<title>Quest 2 Emulator (Dual Stick & Events Fixed)</title>
+<title>Quest 2 Emulator (Logic Fixed)</title>
 <style>
     /* --- 全体レイアウト --- */
     :root {
-        --bg-color: #121212;
+        --bg-color: #000;
         --ui-bg: rgba(20, 20, 20, 0.9);
         --zone-bg: rgba(60, 60, 60, 0.4);
         --accent: #007acc;
@@ -24,11 +24,11 @@
 
     /* --- エディタ画面 --- */
     #editor-screen {
-        display: flex; flex-direction: column; height: 100%; padding: 8px; box-sizing: border-box;
+        display: flex; flex-direction: column; height: 100%; padding: 8px; box-sizing: border-box; background: #111;
     }
     .toolbar { display: flex; justify-content: space-between; margin-bottom: 8px; }
     .btn { background: #333; color: #fff; border: 1px solid #555; padding: 8px 12px; border-radius: 4px; }
-    .btn-run { background: #2e7d32; width: 100%; padding: 15px; font-weight: bold; font-size: 16px; margin-top: 5px; }
+    .btn-run { background: #2e7d32; width: 100%; padding: 15px; font-weight: bold; font-size: 16px; margin-top: 5px; color:white; border:none; border-radius:4px;}
     #code-area {
         flex-grow: 1; background: #1e1e1e; color: #f8f8f2; border: 1px solid #444; padding: 10px; font-family: monospace; resize: none;
     }
@@ -41,7 +41,7 @@
 
     /* --- コントローラーUI --- */
     #ui-header {
-        position: absolute; top: 0; left: 0; width: 100%; padding: 10px;
+        position: absolute; top: 0; left: 0; width: 100%; padding: 10px; box-sizing: border-box;
         display: flex; justify-content: space-between; pointer-events: none;
     }
     #exit-btn {
@@ -51,47 +51,47 @@
     #status-display { background: rgba(0,0,0,0.7); padding: 4px 8px; border-radius: 4px; color: #0f0; font-size: 12px; }
 
     #controls-overlay {
-        position: absolute; bottom: 0; left: 0; width: 100%; height: 45%;
-        background: linear-gradient(to top, rgba(0,0,0,1), rgba(0,0,0,0));
+        position: absolute; bottom: 0; left: 0; width: 100%; height: 42%;
+        background: linear-gradient(to top, rgba(0,0,0,1) 20%, rgba(0,0,0,0));
         display: flex; justify-content: space-between; align-items: flex-end;
         padding: 10px; box-sizing: border-box; pointer-events: none;
     }
 
     .control-zone {
         pointer-events: auto; background: var(--zone-bg); border-radius: 16px;
-        padding: 8px; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+        padding: 5px; display: flex; flex-direction: column; align-items: center; justify-content: space-between;
         width: 48%; height: 100%; border: 1px solid rgba(255,255,255,0.1); box-sizing: border-box;
     }
     
-    .label { font-size: 10px; color: #aaa; font-weight: bold; text-align: center; width: 100%; margin-bottom: 5px; }
+    .label { font-size: 10px; color: #aaa; font-weight: bold; text-align: center; width: 100%; margin-bottom: 2px; }
 
     /* ジョイスティック */
     .joy-container {
-        width: 100px; height: 100px; background: rgba(255,255,255,0.1); border-radius: 50%;
-        position: relative; touch-action: none; margin: 5px 0;
+        width: 80px; height: 80px; background: rgba(255,255,255,0.1); border-radius: 50%;
+        position: relative; touch-action: none; margin: 2px 0;
     }
     .joy-stick {
-        width: 40px; height: 40px; background: var(--accent); border-radius: 50%;
+        width: 30px; height: 30px; background: var(--accent); border-radius: 50%;
         position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
         box-shadow: 0 0 10px var(--accent); pointer-events: none;
     }
 
     /* ボタン */
-    .btn-group { display: flex; gap: 15px; margin-bottom: 10px; }
+    .btn-group { display: flex; gap: 10px; margin-bottom: 5px; }
     .vr-btn {
-        width: 50px; height: 50px; background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.3);
+        width: 45px; height: 45px; background: rgba(255,255,255,0.15); border: 2px solid rgba(255,255,255,0.3);
         border-radius: 50%; color: white; font-weight: bold; display: flex; justify-content: center; align-items: center;
-        user-select: none; font-size: 12px; transition: background 0.1s;
+        user-select: none; font-size: 11px; transition: background 0.1s;
     }
     .vr-btn:active { background: var(--accent); border-color: #fff; transform: scale(0.95); }
     
     /* トラッキングパッド（簡易） */
     .pos-pad {
-        width: 100%; height: 40px; background: rgba(0,0,0,0.3); border: 1px dashed #555; border-radius: 4px;
-        margin-top: 5px; position: relative;
+        width: 90%; height: 30px; background: rgba(0,0,0,0.3); border: 1px dashed #555; border-radius: 4px;
+        margin-top: 2px; position: relative;
     }
     .pos-knob {
-        width: 20px; height: 100%; background: rgba(255,255,0,0.5); position: absolute; left: 50%; transform: translateX(-50%); pointer-events: none;
+        width: 15px; height: 100%; background: rgba(255,255,0,0.5); position: absolute; left: 50%; transform: translateX(-50%); pointer-events: none;
     }
 
 </style>
@@ -123,7 +123,7 @@
 
         <div id="controls-overlay">
             <div class="control-zone">
-                <div class="label">LEFT HAND (Move)</div>
+                <div class="label">LEFT HAND</div>
                 <div class="joy-container" id="joy-left"><div class="joy-stick" id="stick-left"></div></div>
                 
                 <div class="btn-group">
@@ -134,11 +134,12 @@
                     <div class="vr-btn" data-hand="left" data-key="trigger">Trig</div>
                     <div class="vr-btn" data-hand="left" data-key="grip">Grip</div>
                 </div>
+                <div class="label">Pos X</div>
                 <div class="pos-pad" id="pad-left"><div class="pos-knob" id="knob-left"></div></div>
             </div>
 
             <div class="control-zone">
-                <div class="label">RIGHT HAND (Turn)</div>
+                <div class="label">RIGHT HAND</div>
                 <div class="joy-container" id="joy-right"><div class="joy-stick" id="stick-right"></div></div>
                 
                 <div class="btn-group">
@@ -149,41 +150,46 @@
                     <div class="vr-btn" data-hand="right" data-key="trigger">Trig</div>
                     <div class="vr-btn" data-hand="right" data-key="grip">Grip</div>
                 </div>
+                <div class="label">Pos X</div>
                 <div class="pos-pad" id="pad-right"><div class="pos-knob" id="knob-right"></div></div>
             </div>
         </div>
     </div>
 
     <script>
-        // === 1. Mock Library (Injected into Iframe) ===
+        // === 1. Mock Library (注入用コード: ゲーム内での振る舞いを定義) ===
         const MOCK_LIB = `
         <script>
         (function() {
-            console.log("[VR Mock] Initializing...");
+            console.log("[VR Mock] Initializing Logic...");
             
+            // 内部状態の保持 (永続化)
             const state = {
                 viewer: { position: [0, 1.6, 0], quaternion: [0, 0, 0, 1] },
                 inputs: {
-                    left:  { axes: [0,0], buttons: {}, position: [-0.2, 1.4, -0.5], quaternion: [0,0,0,1], prevButtons: {} },
-                    right: { axes: [0,0], buttons: {}, position: [ 0.2, 1.4, -0.5], quaternion: [0,0,0,1], prevButtons: {} }
+                    left:  { axes: [0,0], buttons: {}, position: [-0.2, 1.4, -0.5], quaternion: [0,0,0,1] },
+                    right: { axes: [0,0], buttons: {}, position: [ 0.2, 1.4, -0.5], quaternion: [0,0,0,1] }
                 }
             };
 
+            // 親ウィンドウからのデータ受信
             window.addEventListener('message', (e) => {
                 if (!e.data || e.data.source !== 'VR_HOST') return;
                 const msg = e.data.payload;
                 
                 if (msg.type === 'pose') {
+                    // Viewer Update
                     if (msg.viewer) state.viewer = msg.viewer;
-                    if (msg.left)  {
-                        if(msg.left.position) state.inputs.left.position = msg.left.position;
-                        if(msg.left.axes) state.inputs.left.axes = msg.left.axes;
-                    }
-                    if (msg.right) {
-                        if(msg.right.position) state.inputs.right.position = msg.right.position;
-                        if(msg.right.axes) state.inputs.right.axes = msg.right.axes;
-                    }
                     
+                    // Controllers Update (Position & Axes)
+                    ['left', 'right'].forEach(hand => {
+                        if (msg[hand]) {
+                            if(msg[hand].position) state.inputs[hand].position = msg[hand].position;
+                            if(msg[hand].axes) state.inputs[hand].axes = msg[hand].axes;
+                        }
+                    });
+
+                    // Buttons Update (Merge)
                     if (msg.buttons) {
                         const target = state.inputs[msg.hand].buttons;
                         Object.assign(target, msg.buttons);
@@ -191,17 +197,64 @@
                 }
             });
 
+            // --- Gamepad Mock Class ---
+            // Gamepadオブジェクトを再利用するためにクラス化
+            class MockGamepad {
+                constructor() {
+                    this.buttons = Array(7).fill(0).map(() => ({ pressed: false, value: 0 }));
+                    this.axes = [0, 0, 0, 0]; // WebXRは通常4軸予約だがQuestは[x, y, 0, 0]
+                    this.mapping = 'xr-standard';
+                }
+                
+                update(data, hand) {
+                    this.axes[0] = 0; 
+                    this.axes[1] = 0;
+                    if(data.axes) {
+                        this.axes[2] = data.axes[0]; // WebXR標準では Thumbstick は 2,3 に来ることもあるが
+                        this.axes[3] = data.axes[1]; // エンジンによって違うため、0,1 と 2,3 両方埋める
+                        this.axes[0] = data.axes[0];
+                        this.axes[1] = data.axes[1];
+                    }
+
+                    const mapBtn = (b) => ({ pressed: !!b, value: b ? 1 : 0 });
+                    // 0:Trigger, 1:Grip, 3:StickPress, 4:A/X, 5:B/Y
+                    this.buttons[0] = mapBtn(data.buttons.trigger);
+                    this.buttons[1] = mapBtn(data.buttons.grip);
+                    this.buttons[4] = mapBtn(hand==='left' ? data.buttons.X : data.buttons.A);
+                    this.buttons[5] = mapBtn(hand==='left' ? data.buttons.Y : data.buttons.B);
+                }
+            }
+
+            // --- XR Session Mock ---
             class MockXRSession extends EventTarget {
                 constructor() {
                     super();
                     this.ended = false;
-                    this.inputSources = [ this._createInput('left'), this._createInput('right') ];
-                    this.viewerSpace = { name: 'viewer' };
+                    this.renderState = { baseLayer: null };
+                    
+                    // InputSourceをセッション開始時に1回だけ作成する (重要)
+                    this._inputSources = [
+                        this._createInputSource('left'),
+                        this._createInputSource('right')
+                    ];
                     
                     // イベントリスナーのpolyfill
                     this._listeners = {};
                 }
 
+                _createInputSource(hand) {
+                    return {
+                        handedness: hand,
+                        targetRayMode: 'tracked-pointer',
+                        profiles: ['oculus-touch-v3', 'oculus-touch'],
+                        gamepad: new MockGamepad() // カスタムクラスを使用
+                    };
+                }
+
+                // getterで常に同じ配列参照を返す (重要)
+                get inputSources() { return this._inputSources; }
+
+                // イベント管理
                 addEventListener(type, cb) { 
                     if(!this._listeners[type]) this._listeners[type]=[]; 
                     this._listeners[type].push(cb); 
@@ -212,70 +265,34 @@
                 dispatchEvent(event) {
                     if(this._listeners[event.type]) this._listeners[event.type].forEach(cb => cb(event));
                 }
-
-                _createInput(hand) {
-                    return {
-                        handedness: hand,
-                        targetRayMode: 'tracked-pointer',
-                        profiles: ['oculus-touch-v3', 'oculus-touch-v2', 'oculus-touch', 'generic-trigger-squeeze-thumbstick'],
-                        gamepad: {
-                            buttons: Array(7).fill(0).map(()=>({pressed:false, value:0})),
-                            axes: [0, 0]
-                        }
-                    };
-                }
-
+                
+                // ボタン変化の検知とイベント発火
                 _processEvents(hand, index) {
-                    const src = this.inputSources[index];
+                    const src = this._inputSources[index];
                     const curr = state.inputs[hand].buttons;
-                    const prev = state.inputs[hand].prevButtons;
+                    const prev = state.inputs[hand].prevButtons || {};
                     
                     // Trigger (Select)
-                    const trigNow = !!curr.trigger;
-                    const trigPrev = !!prev.trigger;
-                    
-                    if (trigNow && !trigPrev) {
-                        this.dispatchEvent({ type: 'selectstart', inputSource: src, frame: this._lastFrame });
-                    }
-                    if (!trigNow && trigPrev) {
+                    const tNow = !!curr.trigger; const tPrev = !!prev.trigger;
+                    if (tNow && !tPrev) this.dispatchEvent({ type: 'selectstart', inputSource: src, frame: this._lastFrame });
+                    if (!tNow && tPrev) {
                         this.dispatchEvent({ type: 'selectend', inputSource: src, frame: this._lastFrame });
                         this.dispatchEvent({ type: 'select', inputSource: src, frame: this._lastFrame });
                     }
 
                     // Grip (Squeeze)
-                    const gripNow = !!curr.grip;
-                    const gripPrev = !!prev.grip;
-
-                    if (gripNow && !gripPrev) {
-                        this.dispatchEvent({ type: 'squeezestart', inputSource: src, frame: this._lastFrame });
-                    }
-                    if (!gripNow && gripPrev) {
+                    const gNow = !!curr.grip; const gPrev = !!prev.grip;
+                    if (gNow && !gPrev) this.dispatchEvent({ type: 'squeezestart', inputSource: src, frame: this._lastFrame });
+                    if (!gNow && gPrev) {
                         this.dispatchEvent({ type: 'squeezeend', inputSource: src, frame: this._lastFrame });
                         this.dispatchEvent({ type: 'squeeze', inputSource: src, frame: this._lastFrame });
                     }
 
-                    // 状態保存
                     state.inputs[hand].prevButtons = { ...curr };
                 }
 
-                _syncInput(hand, index) {
-                    const src = this.inputSources[index];
-                    const data = state.inputs[hand];
-                    const map = (b) => ({ pressed: !!b, value: b?1:0, touched: !!b });
-                    
-                    src.gamepad.axes = data.axes; // Update axes
-                    const btns = src.gamepad.buttons;
-                    
-                    // Standard Oculus Mapping
-                    // 0:Trigger, 1:Grip, 2:Pad, 3:ThumbstickClick, 4:A/X, 5:B/Y, 6:Menu
-                    btns[0] = map(data.buttons.trigger);
-                    btns[1] = map(data.buttons.grip);
-                    btns[4] = map(hand==='left' ? data.buttons.X : data.buttons.A);
-                    btns[5] = map(hand==='left' ? data.buttons.Y : data.buttons.B);
-                }
-
-                requestReferenceSpace(t) { return Promise.resolve(this.viewerSpace); }
                 updateRenderState(p) {}
+                requestReferenceSpace(t) { return Promise.resolve({name:'viewer'}); }
                 end() { 
                     this.ended = true; 
                     this.dispatchEvent({type:'end', session:this});
@@ -285,16 +302,17 @@
                 requestAnimationFrame(cb) {
                     if(this.ended) return 0;
                     return window.requestAnimationFrame(t => {
-                        this._lastFrame = { session: this }; // Mock frame for events
+                        this._lastFrame = { session: this };
+                        
+                        // 1. 最新のstateをGamepadオブジェクトに反映
+                        this._inputSources[0].gamepad.update(state.inputs.left, 'left');
+                        this._inputSources[1].gamepad.update(state.inputs.right, 'right');
 
-                        // イベント発火チェック
+                        // 2. イベント発火チェック
                         this._processEvents('left', 0);
                         this._processEvents('right', 1);
 
-                        // 状態同期
-                        this._syncInput('left', 0);
-                        this._syncInput('right', 1);
-                        
+                        // 3. Callback実行
                         cb(t, {
                             session: this,
                             getViewerPose: () => ({
@@ -303,7 +321,7 @@
                                     orientation: {x:state.viewer.quaternion[0], y:state.viewer.quaternion[1], z:state.viewer.quaternion[2], w:state.viewer.quaternion[3]}
                                 },
                                 views: [{
-                                    eye:'left', projectionMatrix:[1.2,0,0,0, 0,2.4,0,0, 0,0,-1,-1, 0,0,-0.2,0],
+                                    eye:'left', projectionMatrix:[1,0,0,0, 0,1,0,0, 0,0,-1,-1, 0,0,-0.1,0],
                                     transform:{position:{x:0,y:0,z:0}, orientation:{x:0,y:0,z:0,w:1}},
                                     viewport:{x:0,y:0, width:window.innerWidth, height:window.innerHeight}
                                 }]
@@ -322,17 +340,17 @@
                 }
             }
 
+            // Navigator Override
             const mockXR = {
                 isSessionSupported: m => Promise.resolve(m==='immersive-vr'),
                 requestSession: m => Promise.resolve(new MockXRSession())
             };
-            
             try { Object.defineProperty(navigator, 'xr', { value: mockXR, configurable: true }); }
             catch(e) { window.navigator.xr = mockXR; }
         })();
         <\/script>`;
 
-        // === 2. Host App ===
+        // === 2. Host App Logic ===
         const app = {
             dom: {
                 editor: document.getElementById('editor-screen'),
@@ -355,8 +373,8 @@
                 loopId: null
             },
             io: {
-                save: () => { localStorage.setItem('vr_slot_'+document.getElementById('slot-select').value, app.dom.code.value); alert('Saved'); },
-                load: () => { const v = localStorage.getItem('vr_slot_'+document.getElementById('slot-select').value); if(v) app.dom.code.value = v; },
+                save: () => { localStorage.setItem('vr_fix_slot_'+document.getElementById('slot-select').value, app.dom.code.value); alert('Saved'); },
+                load: () => { const v = localStorage.getItem('vr_fix_slot_'+document.getElementById('slot-select').value); if(v) app.dom.code.value = v; },
                 paste: async () => { app.dom.code.value = await navigator.clipboard.readText(); }
             },
             system: {
@@ -372,6 +390,7 @@
                     }
                     app.dom.editor.style.display = 'none';
                     app.dom.emulator.style.display = 'block';
+                    // Iframe注入 (headの先頭に入れることで最速実行させる)
                     app.dom.frame.srcdoc = app.dom.code.value.replace('<head>', '<head>' + MOCK_LIB);
 
                     window.addEventListener('deviceorientation', app.tracking.onGyro);
@@ -471,7 +490,7 @@
                         if(!d) continue;
 
                         if(d.type === 'joy') {
-                            const maxR = 50;
+                            const maxR = 40;
                             let dx = t.clientX - d.cx; let dy = t.clientY - d.cy;
                             const dist = Math.sqrt(dx*dx+dy*dy);
                             if(dist > maxR) { dx *= maxR/dist; dy *= maxR/dist; }
@@ -481,23 +500,14 @@
                             
                             const ax = dx/maxR; const ay = dy/maxR;
                             
-                            // IframeへAxes送信
+                            // IframeへAxes送信 (ゲームパッドデータとして)
                             if(app.dom.frame.contentWindow) {
                                 app.dom.frame.contentWindow.postMessage({
                                     source:'VR_HOST', payload: { type:'pose', hand:d.hand, axes:[ax, ay] }
                                 }, '*');
                             }
-
-                            // 左スティックだけHMD移動にも使う
-                            if(d.hand === 'left') {
-                                const yaw = app.state.viewer.yaw;
-                                const speed = 0.05;
-                                app.state.viewer.x += (Math.cos(yaw)*ax - Math.sin(yaw)*ay) * speed;
-                                app.state.viewer.z += (Math.sin(yaw)*ax + Math.cos(yaw)*ay) * speed;
-                            }
                         }
                         else if(d.type === 'pad') {
-                            // 簡易X軸移動
                             const dx = t.clientX - d.sx;
                             app.state.controllers[d.hand].x = d.ix + dx * 0.005;
                             const knob = d.hand==='left' ? app.dom.knobL : app.dom.knobR;
@@ -540,71 +550,89 @@
                     return [ c1*s2*c3+s1*c2*s3, s1*c2*c3-c1*s2*s3, c1*c2*s3-s1*s2*c3, c1*c2*c3+s1*s2*s3 ];
                 }
             },
+            // デフォルトのサンプルコード: 左右スティックとボタンで箱が動く・色が変わる
             sampleCode: `<!DOCTYPE html>
 <html>
 <head>
-  <style>body{margin:0;background:#000;}</style>
+  <style>body{margin:0;background:#111;color:#fff;}</style>
   <script type="module">
     import * as THREE from 'https://unpkg.com/three@0.150.0/build/three.module.js';
-    import { VRButton } from 'https://unpkg.com/three@0.150.0/examples/jsm/webxr/VRButton.js';
 
-    // Scene Setup
+    // Scene
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x333333);
+    scene.background = new THREE.Color(0x222222);
     const camera = new THREE.PerspectiveCamera(70, window.innerWidth/window.innerHeight, 0.1, 100);
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.xr.enabled = true;
     document.body.appendChild(renderer.domElement);
     
-    // Light & Objects
-    const light = new THREE.DirectionalLight(0xffffff, 1);
-    light.position.set(0, 10, 10);
-    scene.add(light);
+    // Objects
     scene.add(new THREE.GridHelper(10, 10));
+    const light = new THREE.DirectionalLight(0xffffff, 1);
+    light.position.set(0, 5, 5);
+    scene.add(light);
 
-    // Controller Visuals
-    const cGeo = new THREE.BoxGeometry(0.1, 0.1, 0.2);
-    const cMatL = new THREE.MeshLambertMaterial({ color: 0xff0000 });
-    const cMatR = new THREE.MeshLambertMaterial({ color: 0x0000ff });
-    const cLeft = new THREE.Mesh(cGeo, cMatL);
-    const cRight = new THREE.Mesh(cGeo, cMatR);
+    // Cube (Controlled by Left Stick)
+    const cube = new THREE.Mesh(
+        new THREE.BoxGeometry(0.3, 0.3, 0.3),
+        new THREE.MeshLambertMaterial({ color: 0x00ff00 })
+    );
+    cube.position.set(0, 1.5, -1);
+    scene.add(cube);
+
+    // Controller Meshes
+    const cGeo = new THREE.BoxGeometry(0.08, 0.08, 0.15);
+    const cLeft = new THREE.Mesh(cGeo, new THREE.MeshLambertMaterial({ color: 0xff0000 }));
+    const cRight = new THREE.Mesh(cGeo, new THREE.MeshLambertMaterial({ color: 0x0000ff }));
     scene.add(cLeft, cRight);
 
-    // Event Listeners for Interaction
-    const controller1 = renderer.xr.getController(0);
-    controller1.addEventListener('selectstart', () => { cLeft.material.color.set(0xffff00); });
-    controller1.addEventListener('selectend', () => { cLeft.material.color.set(0xff0000); });
-    scene.add(controller1);
-
-    const controller2 = renderer.xr.getController(1);
-    controller2.addEventListener('selectstart', () => { cRight.material.color.set(0xffff00); });
-    controller2.addEventListener('selectend', () => { cRight.material.color.set(0x0000ff); });
-    scene.add(controller2);
+    // Event Listeners for Buttons (Log & Change Color)
+    const setupEvents = (idx, mesh) => {
+        const c = renderer.xr.getController(idx);
+        c.addEventListener('selectstart', () => mesh.material.color.setHex(0xffff00)); // Trigger
+        c.addEventListener('selectend', () => mesh.material.color.setHex(idx===0?0xff0000:0x0000ff));
+        c.addEventListener('squeezestart', () => mesh.scale.set(1.5,1.5,1.5)); // Grip
+        c.addEventListener('squeezeend', () => mesh.scale.set(1,1,1));
+        scene.add(c);
+    };
+    setupEvents(0, cLeft);
+    setupEvents(1, cRight);
 
     renderer.setAnimationLoop((t, frame) => {
         if(!frame) { renderer.render(scene, camera); return; }
         const session = renderer.xr.getSession();
-        const refSpace = renderer.xr.getReferenceSpace();
-
-        // Update Controller Meshes Position from Pose
-        session.inputSources.forEach(src => {
-            const pose = frame.getPose(src, refSpace);
+        
+        session.inputSources.forEach((src, i) => {
+            // Update Mesh Position
+            const pose = frame.getPose(src, renderer.xr.getReferenceSpace());
             if(pose) {
                 const mesh = src.handedness === 'left' ? cLeft : cRight;
                 mesh.position.copy(pose.transform.position);
                 mesh.quaternion.copy(pose.transform.orientation);
             }
+
+            // Left Stick moves the Cube
+            if(src.handedness === 'left' && src.gamepad) {
+                const axes = src.gamepad.axes;
+                if(axes.length >= 2) {
+                   // axes[2], axes[3] might be used in some browsers, checking 0,1
+                   const x = axes[2] || axes[0] || 0;
+                   const y = axes[3] || axes[1] || 0;
+                   cube.rotation.y += x * 0.05;
+                   cube.rotation.x += y * 0.05;
+                }
+            }
         });
         renderer.render(scene, camera);
     });
 
-    // Auto Start VR (Mock specific)
+    // Auto Start VR
     setTimeout(async () => {
         if(navigator.xr) {
             try {
-                const session = await navigator.xr.requestSession('immersive-vr');
-                renderer.xr.setSession(session);
+                const s = await navigator.xr.requestSession('immersive-vr');
+                renderer.xr.setSession(s);
             } catch(e) {}
         }
     }, 500);
